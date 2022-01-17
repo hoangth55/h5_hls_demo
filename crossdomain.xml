@@ -1,5 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<cross-domain-policy>
-	<allow-access-from domain="*" secure="false"/>
-	<allow-http-request-headers-from origin="*" domain="*" headers="*" secure="false"/>
-</cross-domain-policy>
