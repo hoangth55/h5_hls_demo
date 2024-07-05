@@ -12,14 +12,17 @@
 
 #btnPlayVideo:hover {
     transform: scale(1.2);
+	background-color: aquamarine;
 }
 
 #btnStopVideo:hover {
     transform: scale(1.2);
+	background-color: aquamarine;
 }
 
 #btnFullscreen:hover {
-    transform: scale(1.3);
+    transform: scale(1.2);
+	background-color: aquamarine;
 }
 
 #videoPlayer {
@@ -126,12 +129,26 @@
 
 .canvasDiv {
     width: 852px;
-    height: 480px
+    height: 480px;
+	z-index:8
 }
 
 #playCanvas {
     width: 852px;
     height: 480px;
+}
+
+.canvasDiv1 {
+	position:absolute;
+	top:30px;
+    width: 852px;
+    height: 476px;
+	z-index:-1
+}
+
+#playCanvas1 {
+    width: 852px;
+    height: 476px;
 }
 
 .no-padding {

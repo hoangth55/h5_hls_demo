@@ -8,6 +8,7 @@ function LoaderHLS() {
 	this.listM3u8 = []; //m3u8列表
 	this.listTs = []; //ts列表
 	this.szTsHeader = null; //ts url的前面部分
+	this.szUrlHeader = null;
 	this.nIndexTs = 0;
 	this.nIndexTs_Sign = 0; //上次获取的Ts表第1个ts在缓存列表中的序号
 	this.nIndexM3u8 = 0;
@@ -16,6 +17,7 @@ function LoaderHLS() {
 	this.szUrlTsLast = null;
 
 	this.fDurationSecs = 0.0;
+	this.fDuration = 0.0;
 
 	this.FetchHttp = null;
 	this.fetchController = null;
@@ -59,11 +61,12 @@ LoaderHLS.prototype.fnCallBack = function(rsp, url) {
 	var listTs = [];
 	var fDurationSecs = 0.0;
 	var szParseTmp;
-	var pattM3u8 = /.m3u8$/;
+	var pattM3u8 = /.m3u8/;
+	var pattTargetDuration = /^#EXT-X-TARGETDURATION/;
 	var pattEXTINF = /^#EXTINF/;
 	var pattEXT_X_STREAM_INF = /^#EXT-X-STREAM-INF/;
 	var pattHTTP = /^http/;
-	var pattEXTINFValue = /#EXTINF:\s*(\d*(?:\.\d+)?)(?:,\r?\n?(.*)\s*)?/;
+	var pattEXTINFValue = /#EXTINF:\s*(\d*(?:\.\d+)?)(?:,[^\r\n]*[\r\n\s]+)?([^\r\n]*)(?:[\s\r\n]*)?/;
 	var szUrlMain = url.substring(0, url.lastIndexOf("/") + 1);
 	var szUrlTmp;
 	var nFind = this.nIndexTs_Sign;
@@ -71,6 +74,8 @@ LoaderHLS.prototype.fnCallBack = function(rsp, url) {
 	for (var index = 0; index < arrayRsp.length; ++index) {
 		szParseTmp = arrayRsp[index];
 		if (pattEXTINF.test(szParseTmp)) {
+			var newLine = szParseTmp.replace('\r', ''); // Tags
+			var match = /^#EXTINF:?([0-9\.]*)?,?(.*)?$/.exec(newLine);
 			var values = pattEXTINFValue.exec(szParseTmp);
 			var duration = parseFloat(values[1]);
 			var szUrl = values[2];
@@ -101,6 +106,21 @@ LoaderHLS.prototype.fnCallBack = function(rsp, url) {
 			};
 			listTs.push(val_ts);
 			fDurationSecs += duration;
+		} else if (pattTargetDuration.test(szParseTmp)) {
+			var arrayLines = szParseTmp.split(":");
+			if(arrayLines.length != 2){
+				continue;
+			}
+			var fDuration = parseFloat(arrayLines[1]);
+			if(fDuration > this.fDuration){
+				this.fDuration = fDuration;
+				var nDuration = parseInt(fDuration * 1000);
+				var objData = {
+					t: kRsp_DurationChange,
+					n: nDuration
+				};
+				self.postMessage(objData);
+			}
 		} else if (pattEXT_X_STREAM_INF.test(szParseTmp)) {
 			var arrayLines = szParseTmp.split("\n");
 			var szLine;
@@ -132,14 +152,24 @@ LoaderHLS.prototype.fnCallBack = function(rsp, url) {
 		this.fDurationSecs += fDurationSecs;
 		
 		if(this.bFirstTime && this.bIsStream){
-			this.nIndexTs = this.listTs.length - 1;
+			this.nIndexTs = 0;//this.listTs.length - 1;
 			this.bFirstTime = false;
 		}
 	}
+
+	var objRet = {
+		t: kRsp_FileTimeLength,
+		d: this.fDurationSecs
+	};
+	self.postMessage(objRet);
 };
 
 LoaderHLS.prototype.fnStartTimer = function() {
 	var self = this;
+	if (this.timerRequest != null) {
+		clearInterval(this.timerRequest);
+	}
+	
 	this.timerRequest = setInterval(function() {
 		self.fnOnRequest();
 	}, this.nIntervalRequest);
@@ -237,12 +267,23 @@ LoaderHLS.prototype.fnRequestM3u8 = function(url) {
 			selfLoader.bRequesting = false;
 		}
 	}
+
+	xmlHttp.onerror = function(){
+		//跨域请求时触发
+		var objData = {
+		  t: kUriDataCors,
+		  r: Error_Url_CORS
+		};
+		self.postMessage(objData);
+	}
 	
 	if (HLS_URL_TYPE_HLS == HLS_URL_TYPE_TS) {
 		xmlHttp.responseType = "arraybuffer";
 	} else {
 		xmlHttp.responseType = "text";
 	}
+	var nIdx_tmp = url.indexOf("://");
+	this.szUrlHeader = url.substring(0, url.indexOf("/", (nIdx_tmp < 0 ? 0 : nIdx_tmp + 3)));
 	this.szTsHeader = url.substring(0, url.lastIndexOf("/") + 1);
 	this.bRequesting = true;
 	xmlHttp.timeout = this.nTimeout;
@@ -290,7 +331,12 @@ LoaderHLS.prototype.fnRequestTs = function(url) {
 	var pattHTTP = /^http/;
 	var szUrl = url;
 	if(!pattHTTP.test(url)){
-		szUrl = this.szTsHeader + url;
+		if(url.charAt(0) == '/'){
+			szUrl = this.szUrlHeader + url;
+		}
+		else{
+			szUrl = this.szTsHeader + url;
+		}
 	}
 	
 	var selfLoader = this;
@@ -446,7 +492,7 @@ LoaderHLS.prototype.fnInit = function(url, isStream, timeout) {
 	this.bIsStream = isStream;
 	this.szUrlMain = url.substring(0, url.lastIndexOf("/") + 1);
 	this.szUrlHls = url;
-	this.nTimeout = timeout || g_nTimeoutCount_Max;
+	this.nTimeout = timeout || g_nTimeout_Default;
 	this.bFirstTime = true;
 	return EE_Loader_OK;
 };
@@ -488,3 +534,29 @@ LoaderHLS.prototype.fnDestory = function() {
 
 	this.nIntervalRequest = g_nInterval_Default;
 };
+
+LoaderHLS.prototype.fnJumpTime = function (info) {
+	var loader = this;
+	
+	let index = 0;
+	let nTime = info.index;
+	let proto = index.streamType;
+	//按类型处理（m3u8/flv）
+	if(kProtoType_HTTP_M3U8 == proto){ //m3u8
+		let sunTime = 0;
+		// 采用ts分片index逻辑（放弃）
+		index = loader.listTs.findIndex((item) => {
+			sunTime += item.d;
+			return sunTime > nTime;
+		});
+		console.log("=======时间跳转==ts==序号====",index)
+	}else if(kProtoType_HTTP == proto){//flv
+		//采用seekFormBegin逻辑
+		index = 0; //默认从0开始
+	}
+	
+	loader.bIsStream = false; //回放
+	loader.nIndexTs = index;
+
+	loader.fnStartTimer();
+}

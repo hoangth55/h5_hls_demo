@@ -2,12 +2,12 @@
 <html>
 	<head>
 		<meta charset="utf-8">
-		<title>WASM TEST</title>
+		<title>JFPLAYER-WASM</title>
 		<meta name="apple-mobile-web-app-capable" content="yes" />
 		<meta name="apple-mobile-web-app-status-bar-style" content="black" />
 		<meta name="apple-touch-fullscreen" content="yes" />
 		<meta name="format-detection" content="telephone=no, email=no" />
-		<link rel="stylesheet" href="./styles/style.css">
+		<link rel="stylesheet" href="styles/style.css">
 	</head>
 
 	<body>
@@ -15,12 +15,21 @@
 			<div class="sideBar">
 				<div id="input">
 					<select id="protocol" onchange="onSelectProto()">
-						<option value="httpHls">HTTP-HLS</option>
-						<option value="httpFlv">HTTP-FLV</option>
-						<option value="http">HTTP</option>
-						<option value="ws">WS</option>
+						<option value="httpFlv">FLV</option>
+						<option value="httpHls">HLS</option>
 					</select>
-					<input type="text" id="inputUrl" style="width:300px" />
+					<input type="text" id="inputUrl" style="width:200px" />
+					<select id="streamType" onchange="onSelectStreamType()">
+						<option value="realplay">realplay</option>
+						<option value="playback">playback</option>
+					</select>
+					<select id="speed" onchange="onSelectSpeed()">
+						<option value=0.5>x0.5</option>
+						<option value=1.0>x1.0</option>
+						<option value=1.5>x1.5</option>
+						<option value=2.0>x2.0</option>
+						<option value=4.0>x4.0</option>
+					</select>
 				</div>
 			</div>
 			<div class="canvasDiv">
@@ -36,6 +45,9 @@
 				</div>
 				<canvas id="playCanvas" width="852" height="480"></canvas>
 			</div>
+			<div class="canvasDiv1">
+				<canvas id="playCanvas1" width="852" height="476"></canvas>
+			</div>
 			<div class="sideBar">
 				<span class="no-padding">
 					<img src="img/play.png" class="left" id="btnPlayVideo" onclick="playVideo()" />
@@ -43,65 +55,43 @@
 				<span class="no-padding" style=" padding-left:5px;">
 					<img src="img/stop.png" class="left" id="btnStopVideo" onclick="stopVideo()" />
 				</span>
-				<span class="track-padding">
-				</span>
-				<span class="no-padding">
-					<input id="timeTrack" type="range" value="0">
-				</span>
-				<span class="no-padding" style=" padding-left:10px;">
-					<label id="timeLabel">00:00:00/00:00:00</label>
-				</span>
+				<div id="progressBar_div" style="display: none;">
+					<span class="track-padding">
+					</span>
+					<span class="no-padding">
+						<input id="timeTrack" type="range" value="0">
+					</span>
+					<span class="no-padding" style=" padding-left:10px;">
+						<label id="timeLabel">00:00:00/00:00:00</label>
+					</span>
+					
+				</div>
 				<span class="no-padding right">
 					<img src="img/fullscreen.png" class="right" id="btnFullscreen" onclick="fullscreen()" />
 				</span>
 			</div>
 		</div>
-		<div id="footer">Copyright &copy; 2019 sonysuqin.All rights reserved.</div>
+		<div id="footer">&copy; 2022 Jiefeng Technologies Co., Ltd.</div>
 
 		<script type='text/javascript' src="common.js"></script>
 		<script type='text/javascript' src="pcm-player.js"></script>
 		<script type='text/javascript' src="webgl.js"></script>
 		<script type='text/javascript' src="player.js"></script>
-		<script type='text/javascript' src="js/FileSaver.js"></script>
-		<!-- 		<script type="text/javascript">
-			//< ![CDATA[
-			if (document.attachEvent) {
-				document.onreadystatechange = function() {
-					//if(document.readyState=='interactive'){
-					Start();
-					//}
-				};
-			} else {
-				document.addEventListener("DOMContentLoaded", Start, false);
-			}
+		<script type="text/javascript" src="md5.js"></script>
+		<script type="text/javascript" src="crypto.js-min.js"></script>
+		<script type="text/javascript" src="DES.js"></script>
+		<script type="text/javascript" src="TimeMillisUtil.js"></script>
 
-			function Start() {
-				alert("document.readyState=" + document.readyState + "\nYes,I'm running");
-			} //]]>
-		</script> -->
 		<script type='text/javascript'>
 			var defaultProtos = {
-				http: {
-					url: "https://roblin.cn/wasm/video/h265_high.mp4",
-					waitLength: 512 * 1024,
-					stream: true,
-				},
-				ws: {
-					url: "wss://roblin.cn/wss/h265_high.mp4",
-					waitLength: 512 * 1024,
-					stream: false,
-				},
 				httpFlv: {
-					url: "https://mister-ben.github.io/videojs-flvjs/bbb.flv",
-					// url: "http://flv.bdplay.nodemedia.cn/live/bbb.flv",
+					url: "https://test-gwm.jftech.pro:9015/rec/7e65eecd497e5a2dsjke/Mnx8M2YwNWM4ZjE0MTk5Y2YzZGNlZjA3YWJlMDM0NWZiMjV8fDdlNjVlZWNkNDk3ZTVhMmRzamtlfHwyNWNhMzk0ODJiYWFiZTcyMWZjYTA2YW8UxMzI0OTIxMzJkMWUwNWUwZDQ3YzE0NTFmZDhkYjU4MjI4OTM1NGY0fHxmbHZ8fDE3MTg5NjEwNzU4NDJ8fDE3MjA3MTYwMzY2NzN8fEdXTQ%3D%3D.7ed84fd753aa36ff985b6d0b57dcfa3e.flv",
 					// url: "https://data.vod.itc.cn/bee/qf/wasm?tok=e4da89d923e4e2af4d622a0edb717f88827b422a&format=flv&direct=1",
 					waitLength: 1,
 					stream: true,
 				},
 				httpHls: {
-					// url: "http://122.112.239.62:9040/camera?device=3301061000035&channel=0&streamtype=1&token=acDUPgcie&type=std.m3u8",
-					url: "http://douban.donghongzuida.com/20200813/7326_4c9e9deb/index.m3u8",
-					// url: "http://douban.donghongzuida.com/20200813/7326_4c9e9deb/index.m3u8",
+					url: "https://gwm-000-cn-0448.bcloud365.net:9011/live/44b35a3d597ffd1c/Mnx8Y2U3ZTg2YmYxOGZmZTE3YmQ0NDRkZWUxMTcyN2FjZTd8fDQ0YjM1YTNkNTk3ZmZkMWN8fGI0Mjg3YTAxZmFkYjA4YzQ0MjA3NTEyZj6BlY2ZmNjEyZGNiZGY2NTk2M2IwMzA0YTMxYTdlMzM5YTJmMmFhZTJ8fGhsc3x8MTcxNjgxOTgyNTUyM3x8MjE0NTk3NDM5OTAwMHx8R1dN.8df1313fac084ce7265392c5260db6bd.m3u8",
 					waitLength: 1,
 					stream: true,
 				},
@@ -110,10 +100,41 @@
 			let protoList = document.getElementById("protocol");
 			let inputUrl = document.getElementById("inputUrl");
 			inputUrl.value = defaultProtos[protoList.options[protoList.selectedIndex].value]["url"];
+			let eleStreamType = document.getElementById("streamType");
+			let eleSpeed = document.getElementById("speed");
+			eleSpeed.selectedIndex = 1;
+			if (eleStreamType.selectedIndex == 0) {
+				eleSpeed.style.display = "none";
+			}
+
+			var canvas1 = document.getElementById("playCanvas1")
+			var context1 = canvas1.getContext("2d")
+			var imgX = 0;
+			var imgY = 0;
+			var imgScale = 1;
+			var img = new Image()
+			img.src = 'img/logo.png'
+			//图片加载完后，将其显示在canvas中
+			img.onload = function() {
+				var bg = context1.createPattern(img, "no-repeat"); //createPattern() 方法在指定的方向内重复指定的元素。
+				var scale_H = img.height > canvas1.height ? canvas1.height / img.height : 1;
+				var scale_W = img.width > canvas1.width ? canvas1.width / img.width : 1;
+				imgScale = scale_H > scale_W ? scale_W : scale_H;
+				var img_H = img.height * imgScale;
+				var img_W = img.width * imgScale;
+				imgX = (canvas1.width - img_W) / 2;
+				imgY = (canvas1.height - img_H) / 2;
+				context1.fillStyle = bg; //fillStyle 属性设置或返回用于填充绘画的颜色、渐变或模式。
+				context1.drawImage(img, 0, 0, img.width, img.height, imgX, imgY, img_W, img_H);
+			}
 
 			//Player object.
 			self.player = new Player({
-				dir: "."
+				dir: ".",
+				appkey:"b6461fefb0424b66f9085623443d0847", //鉴权配置 appKey
+				uuid:"6391d1a360b238987546d15b",  //鉴权配置 uuid
+				appsecret:"503bc0203f094edcb8a1e88f5365acd7",  //鉴权配置 appSecret
+				movedcard:4  //鉴权配置 movedcard
 			});
 
 			var loadingDiv = document.getElementById("loading");
@@ -123,12 +144,14 @@
 			var logger = new Logger("Page");
 
 			function playVideo() {
-
 				// var protoList = document.getElementById("protocol");
 				var proto = protoList.options[protoList.selectedIndex].value;
 				var protoObj = defaultProtos[proto];
 				var inputUrl = document.getElementById("inputUrl");
 				var url = inputUrl.value;
+
+				var bIsStream = eleStreamType.selectedIndex == 0;
+				var nSpeed = eleSpeed.options[eleSpeed.selectedIndex].value;
 
 				var el = document.getElementById("btnPlayVideo");
 				var currentState = self.player.fnGetState();
@@ -138,19 +161,28 @@
 					el.src = "img/pause.png";
 				}
 
-				if (currentState != emState_Running) {
+				if (currentState == emState_Idle) {
+					console.log("=======初始播放========");
 					const canvasId = "playCanvas";
+					// context1.clearRect(0, 0, canvas1.width, canvas1.height);
 					var canvas = document.getElementById(canvasId);
+					// img.abort();
+					// var context = canvas.getContext("2d")
+					// context.fillRect(0, 0, canvas.width, canvas.height);
+					self.player.fnStop();
 					if (!canvas) {
 						logger.logError("No Canvas with id " + canvasId + "!");
 						return false;
 					}
+					
 
 					self.player.fnPlay({
 						url: url,
-						isStream: protoObj.stream,
+						isStream: bIsStream, //protoObj.stream,
 						urlProto: proto,
-						speed: 1.0
+						speed: nSpeed,
+						startDate:'2024-06-07 10:00:00', //flv 回放开始时间
+						endDate:'2024-06-07 10:02:00' //flv 回放结束时间
 					}, canvas, function(e) {
 						switch (e.ret) {
 							case CallBack_Error:
@@ -184,10 +216,22 @@
 						}
 					});
 
+					var Version = self.player.fnGetVersion();
+					//self.player.fnSetRealTime(false);
+					//self.player.fnSetBufferTime(4e3);
+
 					var timeTrack = document.getElementById("timeTrack");
 					var timeLabel = document.getElementById("timeLabel");
-					self.player.fnSetTrack(timeTrack, timeLabel);
-				} else {
+					var progressBarModal = document.getElementById("progressBar_div")
+					self.player.fnSetTrack(timeTrack, timeLabel, progressBarModal);
+				}else if(currentState == emState_Running) { 
+					console.log("=======暂停播放========");
+					self.player.fnPause();
+				}else if(currentState == emState_Pausing){ 
+					console.log("=======恢复播放========");
+					self.player.fnResume();
+				}else{ 
+					console.log("=======暂停播放2========");
 					self.player.fnPause();
 				}
 
@@ -195,7 +239,9 @@
 			}
 
 			function stopVideo() {
+				console.log("=======停止播放========");
 				self.player.fnStop();
+				// img.onload();
 				// var button = document.getElementById("btnPlayVideo");
 				// button.value = "Stop";
 				// button.src = "img/play.png";
@@ -212,6 +258,37 @@
 				var inputUrl = document.getElementById("inputUrl");
 				inputUrl.value = protoObj["url"];
 			}
+
+			function onSelectStreamType() {
+				var eleStreamType = document.getElementById("streamType");
+				var sDisplay = "inline";
+				if (eleStreamType.selectedIndex == 0) {
+					sDisplay = "none";
+				}
+				eleSpeed.style.display = sDisplay;
+			}
+			
+			function onSelectSpeed(){
+				if(self.player.fnGetState() == emState_Running){
+					var eleSpeed = document.getElementById("speed");
+					self.player.fnSetSpeed(eleSpeed.value);
+				}
+			}
+
+			function changeSkipTime(info){
+				self.player.fnPlayerSkipTime(info);
+			}
+			
+			 
+			document.getElementById("timeTrack").addEventListener('change', function() {
+				console.log('Range input value changed to: ' + this.value);
+				var currentState = self.player.fnGetState();
+				if(self.player.m_fDurationSecs > 0 && self.player.m_fDurationSecs != self.player.m_tPtsLast){
+					let time = Math.floor(this.value);
+					changeSkipTime(time);
+				}
+			});	
+
 		</script>
 	</body>
 </html>

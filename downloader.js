@@ -50,17 +50,28 @@ Downloader.prototype.reportData = function (value) {
 	}
 };
 
-Downloader.prototype.fnInit_DL = function (proto, url, isStream, seq) {
+Downloader.prototype.fnInit_DL = function (proto, url, isStream, seq, uuid) {
 	this.seq = seq;
 	if (this.loader) {
 		this.loader.fnDestory();
 		this.loader = null;
 	}
+	let _this = this;
+	fetch('./profile.ini').then((response) => {
+		response.text().then((text) => {
+			// var objRet = {
+			// 	t: kRsp_ProfileData,
+			// 	data: JSON.parse(text)
+			// };
+			// self.postMessage(objRet);
+			_this.m_szLic = text;
+		});
+	});
 	
     switch (proto) {
         case kProtoType_HTTP_M3U8:
 			this.loader = new LoaderHLS();
-			this.loader.fnInit(url, isStream, 5000);
+			this.loader.fnInit(url, isStream, g_nTimeout_Default);
 			this.loader.fnStart();
 			this.state = kStateDownloading;
 			// this.state = kStatePause;
@@ -68,7 +79,7 @@ Downloader.prototype.fnInit_DL = function (proto, url, isStream, seq) {
             break;
 		case kProtoType_HTTP:
 			this.loader = new LoaderHTTP();
-			this.loader.fnInit(url, isStream, seq, 5000);
+			this.loader.fnInit(url, isStream, seq, g_nTimeout_Default);
 			this.state = kStatePause;
 			this.loader.fnStart();
 			this.state = kStateDownloading;
@@ -82,7 +93,7 @@ Downloader.prototype.fnInit_DL = function (proto, url, isStream, seq) {
 		t: kRsp_DownloadStart,
 		e: 0,
 		q: self.downloader.seq,
-		u: url
+		u: uuid
 	};
 	self.postMessage(objRet);
 }
@@ -150,9 +161,23 @@ Downloader.prototype.resume = function () {
 // 	}
 // };
 
+Downloader.prototype.skipTime = function(info){
+	if (this.loader != null) {
+		this.loader.fnJumpTime(info)
+	}
+	let objRet={
+		t: kRsp_DownloadChangeTime, 
+		s: info.index,
+		e:0,
+		q:this.seq
+	}
+	self.postMessage(objRet); 
+}
+
 self.downloader = new Downloader();
 
 self.onmessage = function (evt) {
+	let _this = this;
 	//console.log("----5-----"+new Date());
     if (!self.downloader) {
         console.log("[ER] Downloader not initialized!");
@@ -167,7 +192,7 @@ self.onmessage = function (evt) {
     var objData = evt.data;
     switch (objData.t) {
         case kReq_DownloadStart:{
-			self.downloader.fnInit_DL(objData.p, objData.u, objData.i, objData.q);
+			self.downloader.fnInit_DL(objData.p, objData.u, objData.i, objData.q, objData.k);
 		}break;
         case kReq_DownloadStop:{
 			self.downloader.stop();
@@ -178,6 +203,9 @@ self.onmessage = function (evt) {
         case kReq_DownloadResume:{
 			self.downloader.resume();
 		}break;
+		case kReq_DecoderSkipTime: { 
+			self.downloader.skipTime(objData); 
+		} break;
         default:
             self.downloader.logger.logError("Unsupport messsage " + objData.t);
     }

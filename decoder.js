@@ -6,7 +6,7 @@ self.Module = {
 
 if(self.importScripts != undefined){
 	self.importScripts("common.js");
-	self.importScripts("libffmpeg.js");
+	self.importScripts("libwasm.js");
 	
 }
 
@@ -28,16 +28,19 @@ function Decoder() {
 	this.m_bDataFinished = false;
 };
 
-Decoder.prototype.startDecoder = function(chunkSize, type, interval, logLv, licence, media) {
+Decoder.prototype.startDecoder = function(chunkSize, type, interval, logLv, uuid, media) {
+	if(!uuid){
+		return;
+	}
 	this.coreLogLevel = logLv || g_nLogLv_Default;
-	var arrLic = intArrayFromString(licence).concat(0);
-	var bufLic = Module._malloc(arrLic.length);
-	Module.HEAPU8.set(arrLic, bufLic);
+	var arrUuid = intArrayFromString(uuid).concat(0);
+	var bufUuid = Module._malloc(arrUuid.length);
+	Module.HEAPU8.set(arrUuid, bufUuid);
 	var arrMedia = intArrayFromString(media).concat(0);
 	var bufMedia = Module._malloc(arrMedia.length);
 	Module.HEAPU8.set(arrMedia, bufMedia);
 	var ret = Module._fnInitDecoder(this.coreLogLevel, type, this.videoCallback, this.audioCallback, this.requestCallback,
-		this.decodeInfoCallback, bufLic, arrLic.length, bufMedia, arrMedia.length);
+		this.decodeInfoCallback, bufUuid, arrUuid.length, bufMedia, arrMedia.length);
 	if (0 == ret) {
 		if (null == this.cacheBuffer) {
 			this.cacheBuffer = Module._malloc(chunkSize);
@@ -47,13 +50,18 @@ Decoder.prototype.startDecoder = function(chunkSize, type, interval, logLv, lice
 		this.m_bDataFinished = false;
 	}
 	
-	Module._free(bufLic);
+	Module._free(bufUuid);
 	Module._free(bufMedia);
 	var objData = {
 		t: kRsp_DecoderStart,
 		e: ret
 	};
 	self.postMessage(objData);
+	
+	// var uuid="65de95ade236f53f04090024";
+	// this.seedKeyData(0, uuid);
+	// var lic="A07K7Pwz6I6d8sYgMlp57gTpC:KtQhconz2MHRUchDneDgm05gdLWVy3vgzxpKzlLFjXFFDoPgdRiqqRqWYEjokprcQddeIwtMdi3SnK6olB3JKiP5GRSYnLTno0plW3UuUvGYU0DQz6CUdOP.3KdsDPqwSb==";
+	// this.seedKeyData(1, lic);
 };
 
 Decoder.prototype.uninitDecoder = function() {
@@ -155,22 +163,30 @@ Decoder.prototype.sendData = function(data) {
 	Module.HEAPU8.set(typedArray, this.cacheBuffer);
 	var nRet = Module._fnSendData(2, this.cacheBuffer, typedArray.length);
 	if (0 > nRet) {
-		if (-111 == nRet) {
-			self.decoder.logger.logError("Error of your authorization, please contact us and get a new one.");
+		if(-112 == nRet){
 			var objData = {
-				t: kAuthErr,
+				t: kReauth,
 			};
 			self.postMessage(objData);
-		} else {
-			self.decoder.logger.logError("Decoder sendData Error.");
+		}else{
+			if (-111 == nRet) {
+				self.decoder.logger.logError("Error of your authorization, please contact us and get a new one.");
+				var objData = {
+					t: kAuthErr,
+				};
+				self.postMessage(objData);
+			}else {
+				self.decoder.logger.logError("Decoder sendData Error.");
+			}
+			self.decoder.pauseDecoding();
+			var objData = {
+				t: kFinishedEvt,
+			};
+			self.postMessage(objData);
+			return;
 		}
-		self.decoder.pauseDecoding();
-		var objData = {
-			t: kFinishedEvt,
-		};
-		self.postMessage(objData);
-		return;
 	}
+	
 	var nDuration = Module._fnGetDurationOfPktList();
 	if (nDuration > 30000 && this.m_tDataFullSendNext < Date.now()) {
 		var objData = {
@@ -181,10 +197,15 @@ Decoder.prototype.sendData = function(data) {
 	}
 };
 
-Decoder.prototype.seedKeyData = function(data) {
+Decoder.prototype.seedKeyData = function(key, data) {
+	if(!data){
+		return;
+	}
 	var tmp = intArrayFromString(data).concat(0);
-	Module.HEAPU8.set(tmp, this.cacheBuffer);
-	Module._fnSendData(1, this.cacheBuffer, tmp.length);
+	var bufHeap = Module._malloc(tmp.length + 1);
+	Module.HEAPU8.set(tmp, bufHeap);
+	Module._fnSendData(key, bufHeap, tmp.length);
+	Module._free(bufHeap);
 };
 
 Decoder.prototype.seekTo = function(ms) {
@@ -222,7 +243,19 @@ Decoder.prototype.processReq = function(req) {
 			this.m_bDataFinished = true;
 			break;
 		case kRsp_DownloadStart:
-			this.seedKeyData(req.u);
+			this.seedKeyData(0, req.u);
+			break;
+		case kReq_Auth:
+			this.seedKeyData(1, req.a);
+			break;
+		case kReq_Profile:
+			this.seedKeyData(0, req.u);
+			break;
+		case kReq_domain:
+			this.seedKeyData(0, req.u);
+			break;	
+		case kReq_uuid:
+			this.seedKeyData(0, req.u);
 			break;
 		default:
 			this.logger.logError("Unsupport messsage " + req.t);
@@ -240,6 +273,16 @@ Decoder.prototype.onWasmLoaded = function() {
 	this.wasmLoaded = true;
 	
 	this.getVersion();
+	
+	/*
+	var addr = self.getCurrPageAddr1();
+	const addrLen = lengthBytesUTF8(addr) + 1;
+	const addrPtr = Module._malloc(addrLen);
+	stringToUTF8(addr, addrPtr, addrLen);
+	Module.ccall('getCurrPageAddr', null, ['string'], [addrPtr]);
+	Module._free(addrPtr);
+	*/
+	
 
 	this.videoCallback = Module.addFunction(function(buff, size, timestamp, width, height, yLen, uvLen) {
 		/*width = 1920;
@@ -402,21 +445,29 @@ Decoder.prototype.onWasmLoaded = function() {
 
 self.decoder = new Decoder;
 
+//获取版本
 Decoder.prototype.getVersion = function() {
 	var szTmp128 = Module._malloc(128);
-	var nRet = Module._fnGetVersion(szTmp128, 128);
-	var array = Module.HEAPU8.subarray(szTmp128, szTmp128 + nRet);
-	var version = "";
-	for(var i=0;i<nRet;++i)
-	{
-		version += String.fromCharCode(array[i]);
+	try {
+	    var nRet = Module._fnGetVersion(szTmp128, 128);
+	    // 处理响应
+		var array = Module.HEAPU8.subarray(szTmp128, szTmp128 + nRet);
+		var version = "";
+		for(var i=0;i<nRet;++i)
+		{
+			version += String.fromCharCode(array[i]);
+		}
+		Module._free(szTmp128);
+		var objData = {
+			t: kVersion,
+			v: version
+		};
+		// console.log("=====向主线程发送消息==decoder==获取版本=========")
+		self.postMessage(objData);
+	} finally {
+	    Module._free(szTmp128);
 	}
-	Module._free(szTmp128);
-	var objData = {
-		t: kVersion,
-		v: version
-	};
-	self.postMessage(objData);
+
 };
 
 self.onmessage = function(evt) {
@@ -426,12 +477,16 @@ self.onmessage = function(evt) {
 		return;
 	}
 
-	// top.sessionStorage.setItem('gg', 'apple');
-	// var gg = top.sessionStorage.getItem("gg");
-
 	var req = evt.data;
 	if (!self.decoder.wasmLoaded) {
-		self.decoder.cacheReq(req);
+		self.decoder.cacheReq = function(req) {
+			// 如果缓存超过限制，清理旧请求
+			if (this.tmpReqQue.length > MAX_CACHE_SIZE) {
+				this.tmpReqQue.shift(); // 移除最旧的请求
+			}
+			this.tmpReqQue.push(req);
+		};
+
 		self.decoder.logger.logInfo("Temp cache req " + req.t + ".");
 		return;
 	}

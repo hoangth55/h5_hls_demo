@@ -1,3 +1,94 @@
+function Signature() {
+
+};
+
+Signature.fnGetSignature = function(uuid, appkey, appsecret, timeMillis, movedcard) {
+  var encryptStr = uuid + appkey + appsecret + timeMillis;
+  var arrEncrypt = Signature.fnStr2Byte(encryptStr);
+  var arrEncrypt_change = Signature.fnChange(encryptStr, movedcard);
+  var arrMerge = Signature.fnMerge(arrEncrypt, arrEncrypt_change);
+
+  return md5.hex(arrMerge);
+}
+
+Signature.fnChange = function(encryptStr, movedcard) {
+  var arrEncrypt = Signature.fnStr2Byte(encryptStr);
+  var len = arrEncrypt.length;
+  for (var idx = 0; idx < len; ++idx) {
+    var tmp = ((idx % movedcard) > ((len - idx) % movedcard)) ? arrEncrypt[idx] : arrEncrypt[len - (idx + 1)];
+    arrEncrypt[idx] = arrEncrypt[len - (idx + 1)];
+    arrEncrypt[len - (idx + 1)] = tmp;
+  }
+  return arrEncrypt;
+}
+
+Signature.fnStr2Byte = function(str) {
+  let bytes = new Array();
+  let length = str.length;
+  let char;
+
+  for (let i = 0; i < length; i++) {
+    char = str.charCodeAt(i);
+    if (char >= 0x010000 && char <= 0x10FFFF) {
+      bytes.push(((char >> 18) & 0x07) | 0xF0);
+      bytes.push(((char >> 12) & 0x3F) | 0x80);
+      bytes.push(((char >> 6) & 0x3F) | 0x80);
+      bytes.push((char & 0x3F) | 0x80);
+    } else if (char >= 0x000800 && char <= 0x00FFFF) {
+      bytes.push(((char >> 12) & 0x0F) | 0xE0);
+      bytes.push(((char >> 6) & 0x3F) | 0x80);
+      bytes.push((char & 0x3F) | 0x80);
+    } else if (char >= 0x000080 && char <= 0x0007FF) {
+      bytes.push(((char >> 6) & 0x1F) | 0xC0);
+      bytes.push((char & 0x3F) | 0x80);
+    } else {
+      bytes.push(char & 0xFF);
+    }
+  }
+  return bytes;
+}
+
+Signature.fnByte2Str = function(byte) {
+  return byte.map(function(x) {
+    x = x.toString(16);
+    x = ('00' + x).substr(-2);
+    return x
+  }).join('');
+}
+
+Signature.fnMerge = function(encryptByte, changeByte) {
+  let length = encryptByte.length;
+  let doubleLength = length * 2;
+  let temp = new Array(doubleLength);
+
+  for (let i = 0; i < length; i++) {
+    temp[i] = encryptByte[i];
+    temp[doubleLength - 1 - i] = changeByte[i];
+  }
+
+  return temp;
+}
+
+Signature.getDomainFromUrl = function() {  
+    var domain;  
+	var url = window.location.href;
+    var index = url.indexOf("://");  
+    if (index != -1) {  
+        var domainUrl = url.substring(index + 3);  
+        index = domainUrl.indexOf("/");  
+        if (index != -1) {  
+            domain = domainUrl.substring(0, index);  
+        } else {  
+            domain = domainUrl;  
+        }  
+        index = domain.indexOf(":");  
+        if (index != -1) {  
+            domain = domain.substring(0, index);  
+        }  
+    }  
+    return domain;  
+}  
+
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ======================== String Operation =========================
 String.prototype.startWith = function(str) {
@@ -9,6 +100,13 @@ String.prototype.endWith = function(str) {
 	var reg = new RegExp(str + "$");
 	return reg.test(this);
 };
+
+function IsEmptyStr(str) {
+	if (str == undefined || str == null || str == '') {
+		return true;
+	}
+	return false;
+}
 
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -52,6 +150,8 @@ function FileInfo(urlInfo) {
 	this.leftShiftBits = urlInfo.leftShiftBits || g_nLeftShiftBits_Default;
 	this.rightShiftBits = urlInfo.rightShiftBits || g_nRightShiftBits_Default;
 	this.milliSecsOfBuff = urlInfo.milliSecsOfBuff || g_nMilliSecsOfBuff_Set;
+	this.startDate = urlInfo.startDate || g_nDateStr_Default;
+	this.endDate = urlInfo.endDate || g_nDateStr_Default;
 
 	var proto_type = urlInfo.urlProto;
 	var infoRet = {
@@ -82,6 +182,25 @@ function FileInfo(urlInfo) {
 		this.type = infoRet.type;
 	}
 };
+
+//计算时间差，返回单位：毫秒
+function calculateTimeDifference(timeStr1, timeStr2) {  
+    // 定义日期时间字符串的格式  
+    const format = "YYYY-MM-DD HH:mm:ss";  
+      
+    // 解析字符串为 Date 对象  
+    function parseDateTime(timeStr) {  
+        const parts = timeStr.split(/[- :]/);  
+        return new Date(Date.UTC(parts[0], parts[1] - 1, parts[2], parts[3], parts[4], parts[5]));  
+    }  
+  
+    // 计算时间差  
+    const dateTime1 = parseDateTime(timeStr1);  
+    const dateTime2 = parseDateTime(timeStr2);  
+    const difference = dateTime1 - dateTime2;  
+  
+    return difference;  
+} 
 
 FileInfo.prototype.fnGetStreamTypeByUrl = function(url) {
 	var pattHttp = /^http/;
@@ -153,7 +272,20 @@ FunsExtend_Stream.prototype = {
 		}
 
 		this.logger.logInfo("Stop in stream pause.");
-		this.fnStop();
+		// this.fnStop();
+		
+		//Pause audio context.
+		if (this.m_pPcmPlayer) {
+			this.m_pPcmPlayer.pause();
+		}
+		this.m_nState = emState_Pausing;
+		
+		this.fnPauseDownloader();
+		this.fnPauseDecoder();
+		this.fnStopTimerTrack();
+		this.fnHideLoading();
+		this.fnStopBuffering()
+		this.fnClearBufferFrames();
 
 		var ret = {
 			e: 0,
@@ -163,18 +295,28 @@ FunsExtend_Stream.prototype = {
 		return ret;
 	},
 	fnResume: function(fromseek) {
-		if (this.m_nState != emState_Idle || this.m_stStreamParams == null) {
-			var ret = {
-				e: -1,
-				m: "Not pausing"
-			};
-			return ret;
+		// if (this.m_nState != emState_Idle || this.m_stStreamParams == null) {
+		// 	var ret = {
+		// 		e: -1,
+		// 		m: "Not pausing"
+		// 	};
+		// 	return ret;
+		// }
+		
+		//Resume audio context.
+		if (this.m_pPcmPlayer) {
+			this.m_pPcmPlayer.resume();
 		}
 
+		this.m_nState = emState_Running;
+		
+		this.fnResumeDownloader()
+		this.fnResumeDecoder()
+		this.fnHideLoading();
+		this.fnStartBuffering()
+
 		this.logger.logInfo("Play in stream resume.");
-		this.fnPlay(this.m_stStreamParams.urlInfo,
-			this.m_stStreamParams.canvas,
-			this.m_stStreamParams.callback);
+		this.fnPlay(this.m_stStreamParams.urlInfo,this.m_stStreamParams.canvas,this.m_stStreamParams.callback);
 		this.m_stStreamParams = null;
 
 		var ret = {
@@ -195,12 +337,26 @@ function FunExtend_NotStream() {
 
 FunExtend_NotStream.prototype = {
 	fnPause: function() {
+		this.m_stStreamParams = {
+			urlInfo: this.m_pUrlInfo,
+			canvas: this.m_pCanvas,
+			callback: this.m_fnCallback
+		}
+		
 		//Pause audio context.
 		if (this.m_pPcmPlayer) {
 			this.m_pPcmPlayer.pause();
 		}
 		this.m_tLocalMsecsFirst = 0;
 		this.m_nState = emState_Pausing;
+
+		// this.fnPauseDownloader();
+		// this.fnPauseDecoder();
+		// this.fnPauseTimerTrack(0);
+		this.fnHideLoading();
+		// this.fnStopBuffering()
+		// this.fnClearBufferFrames();
+
 		var ret = {
 			e: 0,
 			m: "Success"
@@ -227,6 +383,16 @@ FunExtend_NotStream.prototype = {
 		this.m_tLocalMsecsFirst = 0;
 		this.m_nState = emState_Running;
 
+		// this.m_tPtsLast
+		// this.fnResumeDownloader()
+		// this.fnResumeDecoder()
+		this.fnHideLoading();
+		// this.fnStartBuffering()
+
+		this.logger.logInfo("Play in stream resume.");
+		this.fnPlay(this.m_stStreamParams.urlInfo,this.m_stStreamParams.canvas,this.m_stStreamParams.callback);
+		this.m_stStreamParams = null;
+
 		var ret = {
 			e: 0,
 			m: "Success"
@@ -237,6 +403,11 @@ FunExtend_NotStream.prototype = {
 }
 
 function Player(options) {
+	this.fnClearAuthStroeSession();
+	this.nReqAuthCount = 0;
+	this.nextRequestAuth = 0;
+	this.nextRequestProfile = 0;
+
 	this.m_szVersion = "";
 	this.options = options;
 	// this == Player
@@ -281,8 +452,9 @@ function Player(options) {
 	this.m_nBeginTime_Pcm = 0;
 
 	this.m_nState = emState_Idle;
-	this.m_nState_Dec = emState_Idle;
-	this.m_nTimerInterval_Dec = g_nIntervalDec_Default;
+	this.m_nState_Dld = null;
+	this.m_nState_Dec = emState_Idle; 
+	this.m_nTimerInterval_Dec = g_nIntervalDec_Default; 
 
 	this.m_pTimeLabel = null;
 	this.m_pTimeTrack = null;
@@ -291,9 +463,13 @@ function Player(options) {
 	this.m_nTimerInterval_Track = g_nInterval_Default;
 
 	this.m_pLoadingDiv = null; // 缓冲时圈动画
-	
+
 	// 未发送至Decoder的数据
 	this.m_arrCache = new Array();
+
+	//进度条模块
+	this.m_pProgressBarModal = null; //进度条模块（用于显示、隐藏）
+	this.m_fDurationSecs = 0; //记录回放url （m3u8）文件总时长
 
 	// 帧缓冲
 	this.m_bBuffering = false;
@@ -303,30 +479,192 @@ function Player(options) {
 	this.m_nLeftShiftBits = g_nLeftShiftBits_Default; // 左移位数
 	this.m_nRightShiftBits = g_nRightShiftBits_Default; // 右移位数
 	this.m_tMilliSecsOfBuff_Set = g_nMilliSecsOfBuff_Set; // 缓冲设置时间
+	this.m_tDuration = 0; // 单切片最大时间
+	this.m_bIsRealTime = true; // 是否增强实时性
 	this.m_tMilliSecsOfBuff_2X = g_nMilliSecsOfBuff_Set + 500; // 实时播放时最大延时累积时间
-	this.m_tMilliSecsOfBuff_Min = Math.max((g_nMilliSecsOfBuff_Set >> this.m_nRightShiftBits), g_nMilliSecsOfBuff_Min_Default); // 最小缓冲时间 
-	this.m_tMilliSecsOfBuff_Max = Math.min((g_nMilliSecsOfBuff_Set << this.m_nLeftShiftBits), g_nMilliSecsOfBuff_Max_Default); // 最大缓冲时间 
+	this.m_tMilliSecsOfBuff_Min = Math.max((g_nMilliSecsOfBuff_Set >> this.m_nRightShiftBits),
+		g_nMilliSecsOfBuff_Min_Default); // 最小缓冲时间 
+	this.m_tMilliSecsOfBuff_Max = Math.min((g_nMilliSecsOfBuff_Set << this.m_nLeftShiftBits),
+		g_nMilliSecsOfBuff_Max_Default); // 最大缓冲时间 
 
 	// 实时流时存放url相关信息
 	this.m_stStreamParams = null;
+	this.m_arrBufferFrames = []; //缓冲帧数组信息
+	this.m_pWorker_Dld = null; //创建的worker downloader.js 对象
+	this.m_pWorker_Dec = null; //创建的worker decoder.js 对象
+	this.m_nSpeed = 1; //播放速率
+	this.m_nState_SkipPlayer = false; //跳转播放状态（统计文件总时长业务区分）
+	this.m_time_SkipPlayer = 0; //跳转时间点
 
 	this.logger = new Logger("Player");
 	this.fnNewWorkerDownloader();
 	this.fnNewWorkerDecoder();
+
+	this.m_bSendProfile = false;
+	this.m_bSendAuth = true;
+};
+
+Player.prototype.fnClearAuthStroeSession = function() {
+	for (var i = 0; i < ProfileKey_Note.length; i++) {
+	    let key = ProfileKey_Note[i];
+		window.sessionStorage.removeItem(key);
+	}
+}
+
+Player.prototype.fnParseProfile = function(data) {
+	var uuid = data["uuid"];
+	var appkey = data['appkey'];
+	var appsecret = data['appsecret'];
+	var movedcard = data['movedcard'];
+	if (uuid && appkey && appsecret && movedcard) {
+		window.sessionStorage.setItem(ProfileKey_Note[0], uuid);
+		window.sessionStorage.setItem(ProfileKey_Note[1], appkey);
+		window.sessionStorage.setItem(ProfileKey_Note[2], appsecret);
+		window.sessionStorage.setItem(ProfileKey_Note[3], movedcard.toString());
+		return 0;
+	}
+	
+	return -1;
+};
+
+Player.prototype.fnGetProfile = function() {
+	var uuid = window.sessionStorage.getItem(ProfileKey_Note[0]);
+	if (uuid) {
+		this.AuthErrorByStop()
+		console.error("The authentication information is incorrect, please check");
+		return;
+	}
+
+	if (this.nextRequestProfile > Date.now()) {
+		return;
+	}
+
+	let _this = this;
+	fetch('./profile.ini').then((response) => {
+		response.json().then((data) => {
+			var uuid = data["uuid"];
+			var appkey = data['appkey'];
+			var appsecret = data['appsecret'];
+			var movedcard = data['movedcard'];
+			if (uuid && appkey && appsecret && movedcard) {
+				window.sessionStorage.setItem(ProfileKey_Note[0], uuid);
+				window.sessionStorage.setItem(ProfileKey_Note[1], appkey);
+				window.sessionStorage.setItem(ProfileKey_Note[2], appsecret);
+				window.sessionStorage.setItem(ProfileKey_Note[3], movedcard.toString());
+				_this.fnRequestAuth();
+			}
+		}).catch(error => {
+			console.log("ERROR:", error);
+			++_this.nReqAuthCount;
+		});
+	}).catch(error => {
+		console.log("ERROR:", error);
+		++_this.nReqAuthCount;
+	});
+
+	// 确定下次请求时间
+	this.nextRequestProfile = Date.now() + 1000 * 5;
+};
+
+Player.prototype.fnRequestAuth = function() {
+	let _this = this;
+	var uuid = window.sessionStorage.getItem(ProfileKey_Note[0]);
+	var appkey = window.sessionStorage.getItem(ProfileKey_Note[1]);
+	var appsecret = window.sessionStorage.getItem(ProfileKey_Note[2]);
+	var movedcardStr = window.sessionStorage.getItem(ProfileKey_Note[3]);
+	if (!uuid || !appkey || !appsecret || !movedcardStr) {
+		this.AuthErrorByStop()
+		console.error("The authentication information is incorrect, please check");
+		return;
+	}
+	
+	if (this.nextRequestAuth > Date.now()) {
+		return;
+	}
+	this.nextRequestAuth = Date.now() + AuthRate_Error;
+	
+	var movedcard = parseInt(movedcardStr);
+	var timeMillis = new Date().getTime().toString().padStart(20, '0');
+	
+	var signature = Signature.fnGetSignature(uuid, appkey, appsecret, timeMillis, movedcard);
+	
+	var domain = Signature.getDomainFromUrl();
+	let code = {
+		"Host":domain
+	}
+	
+	let encrypted = ECB.encrypt(JSON.stringify(code),timeMillis,uuid);
+	
+	var url = AuthURL_Note;
+	
+	var hdr = new Headers();
+	hdr.append("Content-Type", "application/x-www-form-urlencoded");
+	hdr.append("uuid", uuid);
+	hdr.append("appKey", appkey);
+	hdr.append("timeMillis", timeMillis);
+	hdr.append("signature", signature);
+
+	var reqInit = {
+		method: 'POST',
+		headers: hdr,
+		mode: 'cors',
+		cache: 'default',
+		body:encrypted
+	};
+	fetch(url, reqInit).then((response) => {
+		response.json().then((data) => {
+			let code = data['code'];
+			let msg = data['msg'];
+			let dt =  data['data'];
+			if(code == 2000 || code == 15074){
+				this.nextRequestAuth = Date.now() + AuthRate_Default;
+				window.sessionStorage.setItem(AuthKey_Note, dt);
+				_this.nReqAuthCount = 0;
+			}else{
+				this.fnStop();
+				console.error(msg);
+			}	 
+		}).catch(error => {
+			console.log("ERROR:", error);
+			this.AuthError();
+		});
+	}).catch(error => {
+		console.log("ERROR:", error);
+		this.AuthError();
+	});
+
+	
+};
+
+Player.prototype.AuthErrorByStop = function() {
+	++this.nReqAuthCount;
+};
+
+Player.prototype.AuthError = function() {
+	++this.nReqAuthCount;
 };
 
 Player.prototype.fnGetVersion = function() {
 	return this.m_szVersion;
 };
 
+Player.prototype.fnSetRealTime = function(isRealTime) {
+	this.m_bIsRealTime = isRealTime;
+};
+
 
 Player.prototype.fnPlay = function(urlInfo, canvas, callback) {
 	this.logger.logInfo("Play " + urlInfo.url + ".");
-
+	urlInfo.url = removeQueryParam(urlInfo.url,"seekFromBegin");
 	var ret = {
 		e: 0,
 		m: "Success"
 	};
+	
+	this.nReqAuthCount = 0;
+	this.fnParseProfile(this.options);
+	this.fnServerUUID();
+	this.fnNetDomain();
 
 	do {
 		if (this.m_nState == emState_Pausing) {
@@ -378,7 +716,8 @@ Player.prototype.fnPlay = function(urlInfo, canvas, callback) {
 		this.fnStartTimerTrack();
 
 		this.m_nSpeed = this.m_pUrlInfo.speed;
-		this.fnSetMilliSecsOfBuff(this.m_pUrlInfo.milliSecsOfBuff, this.m_pUrlInfo.leftShiftBits, this.m_pUrlInfo.rightShiftBits);
+		this.fnSetMilliSecsOfBuff(this.m_pUrlInfo.milliSecsOfBuff, this.m_pUrlInfo.leftShiftBits, this.m_pUrlInfo
+			.rightShiftBits);
 		this.fnClearBufferFrames();
 
 		//var playCanvasContext = playCanvas.getContext("2d"); //If get 2d, webgl will be disabled.
@@ -403,6 +742,7 @@ Player.prototype.fnPlay = function(urlInfo, canvas, callback) {
 		this.m_nState_Dec = emState_Idle;
 		this.fnStartDownloader();
 		this.fnStartDecoder();
+		this.m_nState_Dec = emState_Running;
 		this.fnStartBuffering();
 
 		++this.m_nSeq;
@@ -428,6 +768,16 @@ Player.prototype.fnPause = function() {
 };
 
 Player.prototype.fnResume = function(fromSeek) {
+	this.logger.logInfo("Resume.");
+	
+	if (this.m_nState != emState_Pausing) {
+		var ret = {
+			e: -1,
+			m: "Not pausing"
+		};
+		return ret;
+	}
+	
 	return this.m_pFunsExtend.fnResume.call(this, fromSeek);
 };
 
@@ -440,6 +790,8 @@ Player.prototype.fnStop = function() {
 		return ret;
 	}
 	this.m_nState = emState_Idle;
+	this.m_nState_SkipPlayer = false;
+	this.m_time_SkipPlayer = 0;
 
 	this.fnStopBuffering();
 	this.fnStopDownloader();
@@ -449,6 +801,20 @@ Player.prototype.fnStop = function() {
 	this.fnClearBufferFrames();
 	this.fnCallbackMessage(CallBack_Stop);
 	this.fnClear();
+	this.fnStopTimerAuth();
+
+	if (this.m_pTimerCheck_Recv) {  
+	    this.m_pTimerCheck_Recv = null;  
+	}  
+	  
+	if (this.m_pTimerCheck_DecFrame) {  
+	    this.m_pTimerCheck_DecFrame = null;  
+	}
+	
+	if (this.m_pWebGLPlayer) {
+	    this.m_pWebGLPlayer.destroy(); // 假设有 destroy 方法
+	    this.m_pWebGLPlayer = null;
+	}
 
 	this.m_pUrlInfo = null;
 	this.m_pCanvas = null;
@@ -466,7 +832,7 @@ Player.prototype.fnStop = function() {
 
 	this.fnInitTimerTrack();
 	if (this.m_pTimeLabel) {
-		this.m_pTimeLabel.innerHTML = this.fnFormatTime(0) + "/" + 0;
+		this.m_pTimeLabel.innerHTML =  this.fnFormatTime(0) + "/" +  this.fnFormatTime(0);
 	}
 
 	this.logger.logInfo("Closing decoder.");
@@ -523,6 +889,9 @@ Player.prototype.fnSetMilliSecsOfBuff = function(milliSecs, leftShiftBits, right
 // ======================== Audio About =========================
 
 Player.prototype.fnOnAudioInfo = function(objData) {
+	if (this.m_nState != emState_Running) {
+		return;
+	}
 	this.logger.logInfo("OnAudioInfo " + objData.e + ".");
 	if (objData.e == 0) {
 		this.fnOnAudioParam(objData.a);
@@ -533,7 +902,7 @@ Player.prototype.fnOnAudioInfo = function(objData) {
 };
 
 Player.prototype.fnOnAudioParam = function(a) {
-	if (this.m_nState == emState_Idle) {
+	if (this.m_nState != emState_Running) {
 		return;
 	}
 
@@ -625,14 +994,17 @@ Player.prototype.fnDisplayAudioFrame = function(frame) {
 	// 	this.m_bGetFirstFrame = true;
 	// 	this.m_nBeginTime_Pcm = frame.s;
 	// }
-	this.m_pPcmPlayer.play(new Uint8Array(frame.d), this.m_nSpeed);
+	this.m_pPcmPlayer?.play(new Uint8Array(frame.d), this.m_nSpeed);
 	return true;
 };
 
 Player.prototype.fnOnAudioFrame = function(frame) {
-	// this.fnDisplayAudioFrame(frame);
+	let player = this;
+	if (this.m_nState != emState_Running) {
+		return;
+	}
+	
 	this.arrBufferPcms.push(frame);
-	// this.fnPushBufferFrame(frame);
 };
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -688,14 +1060,33 @@ Player.prototype.fnDisplayVideoFrame = function(frame) {
 
 	if (nTimestampAudio <= 0 || nDelay <= 0) {
 		//this.logger.logInfo("displayVideoFrame ");
-		var data = new Uint8Array(frame.d);
-		var width = frame.w;
-		var height = frame.h;
-		var yLen = frame.y;
-		var uvLen = frame.u;
-		//this.logger.logInfo("displayVideoFrame data:" + data[0] +" width:" + width + " height:" + height +" yLen:" + yLen+" uvLen:" + uvLen);
-		this.fnRenderVideoFrame(data, width, height, yLen, uvLen);
-		return true;
+		try {
+		    // 检查数据大小
+		    // console.log("frame.d 的长度:", frame.d.length);
+		
+		    // 确保数据大小在合理范围内
+		    if (frame.d.length > 0 && frame.d.length < Number.MAX_SAFE_INTEGER) {
+		        var data = new Uint8Array(frame.d);
+		        // console.log("Uint8Array 分配成功");
+				var width = frame.w;
+				var height = frame.h;
+				var yLen = frame.y;
+				var uvLen = frame.u;
+				//this.logger.logInfo("displayVideoFrame data:" + data[0] +" width:" + width + " height:" + height +" yLen:" + yLen+" uvLen:" + uvLen);
+				this.fnRenderVideoFrame(data, width, height, yLen, uvLen);
+				return true;
+		    } else {
+		        console.error("数据大小超出合理范围");
+		    }
+		} catch (e) {
+		    if (e instanceof RangeError) {
+		        console.error("内存分配失败:", e);
+		    } else {
+		        console.error("发生其他错误:", e);
+		    }
+		}
+		
+		
 	}
 
 	return false;
@@ -705,7 +1096,9 @@ Player.prototype.fnDisplayVideoFrame = function(frame) {
 Player.prototype.fnRenderVideoFrame = function(data, width, height, yLen, uvLen) {
 	this.m_pWebGLPlayer.renderFrame(data, width, height, yLen, uvLen);
 };
-
+Player.prototype.fnSendMarkerData = function(e){
+	this.m_pWebGLPlayer.parseAIdata(e);
+};
 Player.prototype.fnOnRequestData = function(offset, available) {
 	// need to add later
 };
@@ -714,10 +1107,15 @@ Player.prototype.fnOnVersion = function(version) {
 	this.m_szVersion = version;
 };
 
+var g_time = 0
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ======================== Display Loop =========================
 
 Player.prototype.fnDisplayLoop = function() {
+	if (this.m_arrBufferFrames.length > MAX_BUFFER_SIZE) {
+	    this.m_arrBufferFrames.splice(0, this.m_arrBufferFrames.length - MAX_BUFFER_SIZE);
+	}
+
 	if (this.m_nState !== emState_Idle) {
 		requestAnimationFrame(this.fnDisplayLoop.bind(this));
 	}
@@ -751,7 +1149,8 @@ Player.prototype.fnDisplayLoop = function() {
 
 		var frame = this.m_arrBufferFrames[0];
 		var tMilliNow = Date.now();
-		if (this.m_tLocalMsecsFirst > 0 && ((frame.s - this.m_tPtsFirst) > (this.m_nSpeed * (tMilliNow - this.m_tLocalMsecsFirst)))) {
+		if (this.m_tLocalMsecsFirst > 0 && ((frame.s - this.m_tPtsFirst) > (this.m_nSpeed * (tMilliNow - this
+				.m_tLocalMsecsFirst)))) {
 			break;
 		}
 
@@ -773,7 +1172,11 @@ Player.prototype.fnDisplayLoop = function() {
 			case kVideoFrame:
 				if (this.fnDisplayVideoFrame(frame)) {
 					if (this.m_tLocalMsecsFirst <= 0) {
-						this.m_tLocalMsecsFirst = tMilliNow;
+						if(!this.m_pUrlInfo.isStream){
+							this.m_tLocalMsecsFirst = tMilliNow - this.m_time_SkipPlayer * 1000;
+						}else{
+							this.m_tLocalMsecsFirst = tMilliNow;
+						}
 						this.m_tPtsFirst = frame.s;
 					}
 					this.m_tLocalMsecsLast = tMilliNow;
@@ -794,37 +1197,41 @@ Player.prototype.fnDisplayLoop = function() {
 			this.fnStop();
 		}
 	}
-	
+
 	var nDuration = this.fnGetDurationOfBufferFrames();
-	if (nDuration < this.m_tMilliSecsOfBuff_Set) {
-		if (this.m_nState_Dec == emState_Pausing) {
-			this.fnResumeDecoder();
-		}
-			
+	if(!this.m_nState_SkipPlayer){
+		var nDuration = this.fnGetDurationOfBufferFrames();
+		if (nDuration < this.m_tMilliSecsOfBuff_Set) {
+			if (this.m_nState_Dec == emState_Pausing) {
+				this.fnResumeDecoder();
+			}
+
 			// 因实时延时累积导致加速后的速度恢复
 			if (this.m_pUrlInfo && this.m_pUrlInfo.isStream && this.m_nSpeed != this.m_pUrlInfo.speed) {
 				this.m_nSpeed = this.m_pUrlInfo.speed;
 				this.m_tLocalMsecsFirst = 0;
 			}
 
-		if (nDuration < this.m_tMilliSecsOfBuff_Min) {
-			if(this.m_nState_Dec != emState_Finished) {
-				this.fnStartBuffering();
+			if (nDuration < this.m_tMilliSecsOfBuff_Min) {
+				if (this.m_nState_Dec != emState_Finished) {
+					this.fnStartBuffering();
+				}
+
+				// // 因实时延时累积导致加速后的速度恢复
+				// if (this.m_pUrlInfo && this.m_pUrlInfo.isStream && this.m_nSpeed != this.m_pUrlInfo.speed) {
+				// 	this.m_nSpeed = this.m_pUrlInfo.speed;
+				// 	this.m_tLocalMsecsFirst = 0;
+				// }
 			}
-			
-			// // 因实时延时累积导致加速后的速度恢复
-			// if (this.m_pUrlInfo && this.m_pUrlInfo.isStream && this.m_nSpeed != this.m_pUrlInfo.speed) {
-			// 	this.m_nSpeed = this.m_pUrlInfo.speed;
-			// 	this.m_tLocalMsecsFirst = 0;
-			// }
 		}
-	}
-	//因实时延时累积后进行加速播放。
-	else if (this.m_pUrlInfo.isStream && nDuration > this.m_tMilliSecsOfBuff_2X) {
-		if(this.m_nSpeed == this.m_pUrlInfo.speed) {
-			this.m_nSpeed = this.m_pUrlInfo.speed * 2;
-			this.m_tLocalMsecsFirst = 0;
+		//因实时延时累积后进行加速播放。
+		else if (this.m_pUrlInfo.isStream && this.m_bIsRealTime && nDuration > this.m_tMilliSecsOfBuff_2X) {
+			if (this.m_nSpeed == this.m_pUrlInfo.speed) {
+				this.m_nSpeed = this.m_pUrlInfo.speed * 2;
+				this.m_tLocalMsecsFirst = 0;
+			}
 		}
+		
 	}
 };
 
@@ -848,15 +1255,56 @@ Player.prototype.fnNewWorkerDownloader = function() {
 			case kRsp_DownloadResume:
 				player.fnOnDownloaderResume(objData);
 				break;
+			case kRsp_DurationChange:
+				player.fnOnDurationChange(objData);
+				break;
 			case kUriData:
 				player.fnOnUriData(objData.d, objData.q);
 				break;
 			case kUriDataFinished:
 				player.fnOnDownloaderFinished(objData);
 				break;
+			case kRsp_ProfileData:
+				player.fnParseProfile(objData.data);
+				break;
+			case kRsp_FileTimeLength: 
+				let proto = player.m_pUrlInfo.proto
+				if(kProtoType_HTTP_M3U8 == proto){
+					let duration = objData.d;
+					if(!player.m_nState_SkipPlayer){
+						player.m_fDurationSecs = duration;
+						player.m_pTimeTrack.max = duration;
+					}else{
+						player.m_time_SkipPlayer = player.m_fDurationSecs - duration;
+					}
+				}
+				break;
+			case kRsp_DownloadChangeTime:
+				player.fnStartDownloader();
+				player.fnStartDecoder();
+				player.fnStartBuffering();
+				break;
 		}
 	}
 };
+
+//清除url指定参数
+function removeQueryParam(url, paramName) {  
+    // 创建一个新的URL对象  
+    let urlObj = new URL(url);  
+      
+    // 获取URL的搜索参数  
+    let params = urlObj.searchParams;  
+      
+    // 删除指定的查询参数  
+    params.delete(paramName);  
+      
+    // 重新构建URL（不包括原始的查询字符串）  
+    urlObj.search = params.toString();  
+      
+    // 返回修改后的URL  
+    return urlObj.toString();  
+} 
 
 Player.prototype.fnCheckAndNewDownloader = function() {
 	if (!this.m_pWorker_Dld && this.m_nState_Dld != emState_Finished) {
@@ -871,7 +1319,8 @@ Player.prototype.fnStartDownloader = function() {
 		p: this.m_pUrlInfo.proto,
 		u: this.m_pUrlInfo.url,
 		i: this.m_pUrlInfo.isStream,
-		q: this.m_nSeq
+		q: this.m_nSeq,
+		k: window.sessionStorage.getItem(ProfileKey_Note[0])
 	};
 	this.m_pWorker_Dld.postMessage(msgReq);
 };
@@ -882,21 +1331,19 @@ Player.prototype.fnStopDownloader = function() {
 	}
 
 	switch (this.m_nState_Dld) {
-		case emState_Idle:
-			{
+		case emState_Idle: {
 
-			}
-			break;
+		}
+		break;
 		case emState_Pausing:
 		case emState_Running:
-		case emState_Finished:
-			{
-				var msgReq = {
-					t: kReq_DownloadStop
-				};
-				this.m_pWorker_Dld.postMessage(msgReq);
-			}
-			break;
+		case emState_Finished: {
+			var msgReq = {
+				t: kReq_DownloadStop
+			};
+			this.m_pWorker_Dld.postMessage(msgReq);
+		}
+		break;
 		default:
 			break;
 	}
@@ -905,25 +1352,22 @@ Player.prototype.fnStopDownloader = function() {
 Player.prototype.fnResumeDownloader = function() {
 	this.fnCheckAndNewDownloader();
 	switch (this.m_nState_Dld) {
-		case emState_Idle:
-			{
-				this.fnStartDownloader();
-			}
-			break;
+		case emState_Idle: {
+			this.fnStartDownloader();
+		}
+		break;
 		case emState_Finished:
-		case emState_Running:
-			{
+		case emState_Running: {
 
-			}
-			break;
-		case emState_Pausing:
-			{
-				var msgReq = {
-					t: kReq_DownloadResume
-				};
-				this.m_pWorker_Dld.postMessage(msgReq);
-			}
-			break;
+		}
+		break;
+		case emState_Pausing: {
+			var msgReq = {
+				t: kReq_DownloadResume
+			};
+			this.m_pWorker_Dld.postMessage(msgReq);
+		}
+		break;
 		default:
 			break;
 	}
@@ -932,25 +1376,22 @@ Player.prototype.fnResumeDownloader = function() {
 Player.prototype.fnPauseDownloader = function() {
 	this.fnCheckAndNewDownloader();
 	switch (this.m_nState_Dld) {
-		case emState_Idle:
-			{
-				// error for didnot init
-				// this.fnStartDownload();
-			}
-			break;
-		case emState_Running:
-			{
-				var msgReq = {
-					t: kReq_DownloadPause
-				};
-				this.m_pWorker_Dld.postMessage(msgReq);
+		case emState_Idle: {
+			// error for didnot init
+			// this.fnStartDownload();
+		}
+		break;
+		case emState_Running: {
+			var msgReq = {
+				t: kReq_DownloadPause
+			};
+			this.m_pWorker_Dld.postMessage(msgReq);
 
-			}
-			break;
+		}
+		break;
 		case emState_Pausing:
-		case emState_Finished:
-			{}
-			break;
+		case emState_Finished: {}
+		break;
 		default:
 			break;
 	}
@@ -996,6 +1437,10 @@ Player.prototype.fnOnDownloaderFinished = function(objData) {
 	this.m_pWorker_Dec.postMessage(objData);
 };
 
+Player.prototype.fnOnDurationChange = function(objData) {
+	this.fnSetDuration(objData.n);
+};
+
 Player.prototype.fnOnUriData = function(data, seq) {
 	if (this.m_nState != emState_Pausing && this.m_nState != emState_Running) {
 		return;
@@ -1004,13 +1449,13 @@ Player.prototype.fnOnUriData = function(data, seq) {
 	if (this.m_nState_Dec == emState_Finished) {
 		return;
 	}
-	
+
 	if (this.m_pWorker_Dec == null || this.m_nState_Dec == emState_Idle) {
 
 		this.m_arrCache.push(data);
 		return;
 	}
-	
+
 	if (this.m_arrCache.length > 0) {
 		for (var i = 0; i < this.m_arrCache.length; i++) {
 			var obj = this.m_arrCache[i];
@@ -1030,6 +1475,43 @@ Player.prototype.fnOnUriData = function(data, seq) {
 	};
 	this.m_pWorker_Dec.postMessage(objData, [objData.d]);
 };
+
+
+Player.prototype.fnPlayerSkipTime = function (info) {
+	let player = this;
+	
+	//更新标识
+	player.m_nState_SkipPlayer = true;
+	player.m_time_SkipPlayer = info;
+	
+	//更新地址（seekFromBegin={secs}）
+	player.m_pUrlInfo.url = removeQueryParam(player.m_pUrlInfo.url,"seekFromBegin");
+	player.m_pUrlInfo.url = player.m_pUrlInfo.url + "?seekFromBegin=" + info;
+
+	//标识重置
+	player.arrBufferPcms = [];
+	player.m_arrBufferFrames = [];
+	player.fnClearBufferFrames();
+	player.m_tPtsFirst = 0;
+	player.m_tPtsLast = 0;
+	
+	//区分url类型
+	let proto = this.m_pUrlInfo.proto
+	if(kProtoType_HTTP == proto){
+		player.fnStartDownloader();
+		player.fnStartDecoder();
+		player.fnStartBuffering();
+	}else{
+		let msgReq={
+			t: kReq_DecoderSkipTime, // 消息类型：跳帧（时间）
+			index:info, //跳帧下标
+			streamType:player.m_pUrlInfo.proto //流类型
+		}
+		player.m_pWorker_Dld.postMessage(msgReq);
+		
+	}
+	
+}
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ======================== Decoder Operation =========================
@@ -1075,42 +1557,51 @@ Player.prototype.fnNewWorkerDecoder = function() {
 			case kRsp_DecoderSeekTo:
 				// player.fnOnSeekToRsp(objData.r);
 				break;
-			case kWriteFrame:
-				{
-					// if(objData.l > 0)
-					// {
-					// 	player.Stream.push(objData.d);
-					// }
-					// else{
-					// 	var len = 0;
-					// 	for(var i=0;i<player.Stream.length;++i)
-					// 	{
-					// 		len += player.Stream[i].length;
-					// 	}
+			// case kRsp_DecoderStart:
+			// 	player.fnOnDecoderStart(objData);
+			// 	break;
+			case kWriteFrame: {
+				// if(objData.l > 0)
+				// {
+				// 	player.Stream.push(objData.d);
+				// }
+				// else{
+				// 	var len = 0;
+				// 	for(var i=0;i<player.Stream.length;++i)
+				// 	{
+				// 		len += player.Stream[i].length;
+				// 	}
 
-					// 	var newStream = new Uint8Array(len);
-					// 	var nIndex = 0;
-					// 	for(var i=0;i<player.Stream.length;++i)
-					// 	{
-					// 		newStream.set(player.Stream[i], nIndex);
-					// 		nIndex += player.Stream[i].length;
-					// 	}
+				// 	var newStream = new Uint8Array(len);
+				// 	var nIndex = 0;
+				// 	for(var i=0;i<player.Stream.length;++i)
+				// 	{
+				// 		newStream.set(player.Stream[i], nIndex);
+				// 		nIndex += player.Stream[i].length;
+				// 	}
 
-					// 	var blob = new Blob([newStream], {
-					// 		type: "text/plain;charset=utf-8"
-					// 	});
+				// 	var blob = new Blob([newStream], {
+				// 		type: "text/plain;charset=utf-8"
+				// 	});
 
-					// 	saveAs(blob, "file/file.txt"); //saveAs(blob,filename)
-					// 	player.Stream = new Uint8Array();
-					// }
+				// 	saveAs(blob, "file/file.txt"); //saveAs(blob,filename)
+				// 	player.Stream = new Uint8Array();
+				// }
 
-				}
-				break;
-			case kVersion:
-				{
-					player.fnOnVersion(objData.v);
-				}
-				break;
+			}
+			break;
+		case kVersion: {
+			player.fnOnVersion(objData.v);
+		}
+		break;
+		case kReauth: {
+			if (!player.m_bSendAuth) {
+				window.sessionStorage.removeItem(AuthKey_Note);
+				player.m_bSendAuth = true;
+				player.fnStartTimerAuth();
+			}
+		}
+		break;
 		}
 	}
 	this.m_nState_Dec = emState_Idle;
@@ -1122,16 +1613,41 @@ Player.prototype.fnCheckAndNewWorkerDecoder = function() {
 	}
 };
 
+Player.prototype.fnServerUUID = function(){
+	var uuid = window.sessionStorage.getItem(ProfileKey_Note[0]);
+	if (uuid) {
+		return;
+	}
+	
+	var msgReq = {
+		t: kReq_uuid,
+		u: uuid
+	};
+	this.m_pWorker_Dec.postMessage(msgReq);
+};
+
+Player.prototype.fnNetDomain = function(){
+	var domain = Signature.getDomainFromUrl(window.location.href);
+	var msgReq = {
+		t: kReq_domain,
+		u: domain
+	};
+	this.m_pWorker_Dec.postMessage(msgReq);
+};
+
 Player.prototype.fnStartDecoder = function() {
 	this.fnCheckAndNewWorkerDecoder();
+	// this.m_bSendProfile = true;
+	// this.m_bSendAuth = true;
+	this.fnStartTimerAuth();
 	var msgReq = {
 		t: kReq_DecoderStart,
 		c: this.m_pUrlInfo.chunkSize,
 		i: this.m_pUrlInfo.type,
 		v: this.m_nTimerInterval_Dec,
 		l: this.m_pUrlInfo.logLv,
-		k: g_szLicence,
-		u: this.m_pUrlInfo.url
+		k: window.sessionStorage.getItem(ProfileKey_Note[0]),
+		u: window.location.href
 	};
 	this.m_pWorker_Dec.postMessage(msgReq);
 };
@@ -1144,35 +1660,33 @@ Player.prototype.fnStopDecoder = function() {
 	switch (this.m_nState_Dec) {
 		case emState_Pausing:
 		case emState_Running:
-		case emState_Finished:
-			{
-				this.m_pWorker_Dec.postMessage({
-					t: kReq_DecoderStop
-				});
-			}
-			break;
-		case emState_Idle:
-			break;
+		case emState_Finished: {
+			this.m_pWorker_Dec.postMessage({
+				t: kReq_DecoderStop
+			});
+		}
+		break;
+	case emState_Idle:
+		break;
 	}
 };
 
 Player.prototype.fnResumeDecoder = function() {
 	this.fnCheckAndNewWorkerDecoder();
 	switch (this.m_nState_Dec) {
-		case emState_Pausing:
-			{
-				var msgReq = {
-					t: kReq_DecoderResume
-				};
-				this.m_pWorker_Dec.postMessage(msgReq);
-			}
-			break;
-		case emState_Idle:
-			{
-				this.fnStartDecoder();
-			}
-			break;
+		case emState_Idle: 
+			this.fnStartDecoder();
+		break;
 		case emState_Running:
+			break;
+		case emState_Pausing: 
+			var msgReq = {
+				t: kReq_DecoderResume
+			};
+			this.m_pWorker_Dec.postMessage(msgReq);
+			break;
+		case emState_Resume:
+			break;
 		case emState_Finished:
 			break;
 	}
@@ -1181,17 +1695,23 @@ Player.prototype.fnResumeDecoder = function() {
 Player.prototype.fnPauseDecoder = function() {
 	this.fnCheckAndNewWorkerDecoder();
 	switch (this.m_nState_Dec) {
-		case emState_Running:
-		case emState_Finished:
-			{
-				var msgReq = {
-					t: kReq_DecoderPause
-				};
-				this.m_pWorker_Dec.postMessage(msgReq);
-			}
-			break;
-		case emState_Pausing:
 		case emState_Idle:
+		break;
+		case emState_Running:
+			break;
+		case emState_Pausing: 
+			var msgReq = {
+				t: kReq_DecoderPause
+			};
+			this.m_pWorker_Dec.postMessage(msgReq);
+			break;
+		case emState_Resume:
+			break;
+		case emState_Finished:
+			var msgReq = {
+				t: kReq_DecoderStop
+			};
+			this.m_pWorker_Dec.postMessage(msgReq);
 			break;
 	}
 };
@@ -1234,6 +1754,7 @@ Player.prototype.fnOnDecoderFinished = function(objData) {
 	this.m_nState_Dec = emState_Finished;
 	this.fnStopBuffering();
 	this.fnStopDownloader();
+	this.fnStopTimerAuth();
 	// this.fnCallbackMessage(CallBack_Finished);
 };
 
@@ -1244,10 +1765,25 @@ Player.prototype.fnOnDecoderAuthErr = function(objData) {
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ======================== Buffering Frames =========================
 Player.prototype.fnSetBufferTime = function(milliSecs) {
+	if (this.m_pUrlInfo.type == STREAM_TYPE_HLS && milliSecs < this.m_tDuration) {
+		return;
+	}
+
 	this.m_tMilliSecsOfBuff_Set = milliSecs;
 	this.m_tMilliSecsOfBuff_2X = this.m_tMilliSecsOfBuff_Set + 500;
 	this.m_tMilliSecsOfBuff_Min = Math.max(g_nMilliSecsOfBuff_Min_Default, (milliSecs >> this.m_nRightShiftBits));
 	this.m_tMilliSecsOfBuff_Max = Math.min(g_nMilliSecsOfBuff_Max_Default, (milliSecs << this.m_nLeftShiftBits));
+};
+
+Player.prototype.fnSetDuration = function(milliSecs) {
+	if (this.m_tDuration < milliSecs) {
+		this.m_tDuration = milliSecs;
+	}
+
+	if (milliSecs <= this.m_tMilliSecsOfBuff_Set) {
+		return;
+	}
+	this.fnSetBufferTime(milliSecs);
 };
 
 Player.prototype.fnGetDurationOfBufferFrames = function() {
@@ -1261,27 +1797,47 @@ Player.prototype.fnGetDurationOfBufferFrames = function() {
 };
 
 Player.prototype.fnPushBufferFrame = function(frame) {
-	this.m_arrBufferFrames.push(frame);
-	this.fnUpdateTimerTrackMax(frame.s);
-	//this.logger.logInfo("bufferFrame " + frame.s + ", seq " + frame.q);
-	var nDurationBuff = this.fnGetDurationOfBufferFrames();
-	if (nDurationBuff >= this.m_tMilliSecsOfBuff_Set) {
-		this.fnStopBuffering();
-
-		if (nDurationBuff > this.m_tMilliSecsOfBuff_Max) {
-			//this.logger.logInfo("Frame buffer time length >= " + this.maxBufferTime + ", pause decoding.");
-			this.fnPauseDecoder();
+	let player = this;
+	let time = frame.s;
+	if(time < this.m_tPtsFirst || time < this.m_tPtsLast){ 
+		return;
+	}
+	
+	player.m_arrBufferFrames.push(frame);
+	player.fnUpdateTimerTrackMax(frame.s);
+	var nDurationBuff = player.fnGetDurationOfBufferFrames();
+	if (nDurationBuff >= player.m_tMilliSecsOfBuff_Set) {
+		player.fnStopBuffering();
+		if (nDurationBuff > player.m_tMilliSecsOfBuff_Max) {
+			player.fnPauseDecoder();
 		}
-
-		// if (this.m_pUrlInfo.isStream) {
-		// 	this.fnSetSpeed(3.0);
-		// }
+	
 	}
-
-	if (this.m_nState_Dec == emState_Finished) {
-		this.fnStopBuffering();
+	
+	if (player.m_nState_Dec == emState_Finished) {
+		player.fnStopBuffering();
 	}
+	
 };
+
+//执行存储bufferFrame业务
+function pushBufferFrameModule(frame,player){
+	player.m_arrBufferFrames.push(frame);
+	player.fnUpdateTimerTrackMax(frame.s);
+	var nDurationBuff = player.fnGetDurationOfBufferFrames();
+	if (nDurationBuff >= player.m_tMilliSecsOfBuff_Set) {
+		player.fnStopBuffering();
+		if (nDurationBuff > player.m_tMilliSecsOfBuff_Max) {
+			player.fnPauseDecoder();
+		}
+	
+		 
+	}
+	
+	if (player.m_nState_Dec == emState_Finished) {
+		player.fnStopBuffering();
+	}
+}
 
 Player.prototype.fnClearBufferFrames = function() {
 	this.m_arrBufferFrames = [];
@@ -1342,9 +1898,20 @@ Player.prototype.fnStopBuffering = function() {
 
 Player.prototype.fnStartTimerTrack = function() {
 	var player = this;
+	if(player.m_pTimer_Track != null){
+		window.clearInterval(player.m_pTimer_Track);
+	}
 	this.m_pTimer_Track = setInterval(function() {
 		player.fnUpdateTimerTrack();
 	}, this.m_nTimerInterval_Track);
+};
+
+Player.prototype.fnPauseTimerTrack = function() {
+	if (this.m_pTimer_Track != null) {
+		clearInterval(this.m_pTimer_Track);
+		this.m_pTimer_Track = null;
+	}
+	
 };
 
 Player.prototype.fnStopTimerTrack = function() {
@@ -1372,11 +1939,20 @@ Player.prototype.fnUpdateTimerTrackValue = function(pts) {
 			return false;
 		}
 
-		this.m_pTimeTrack.value = pts;
-		if (this.m_pTimeTrack.max < pts) {
-			this.m_pTimeTrack.max = pts;
-			this.m_szDurationDisplay = this.formatTime(pts / 1000);
+		let time = Math.floor(pts / 1000);
+		if(this.m_nState_SkipPlayer){ 
+			time += this.m_time_SkipPlayer;
 		}
+		this.m_pTimeTrack.value =  time;
+		if (this.m_pTimeTrack.max >= time) {
+			if(this.formatTime){
+				this.m_szDurationDisplay = this.formatTime(pts / 1000);
+				
+			}
+		}else{
+			return false;
+		}
+		
 		return true;
 	} else {
 		return false;
@@ -1385,10 +1961,7 @@ Player.prototype.fnUpdateTimerTrackValue = function(pts) {
 
 Player.prototype.fnUpdateTimerTrackMax = function(pts) {
 	if (this.m_pTimeTrack) {
-		if (this.m_pTimeTrack.max < pts) {
-			this.m_pTimeTrack.max = pts;
-			this.m_szDurationDisplay = this.fnFormatTime(pts / 1000);
-		}
+		this.m_szDurationDisplay = this.fnFormatTime(pts / 1000);
 	}
 };
 
@@ -1402,13 +1975,28 @@ Player.prototype.fnUpdateTimerTrack = function() {
 		if (this.fnUpdateTimerTrackValue(this.m_tPtsLast)) {
 			if (this.m_pTimeLabel) {
 				var nSecsLastPts = this.m_tPtsLast / 1000;
-				// $("#timeLabel").html(this.fnFormatTime(nSecsLastPts) + "/" + this.m_szDurationDisplay);
-				this.m_pTimeLabel.innerHTML = this.fnFormatTime(nSecsLastPts) + "/" + this.m_szDurationDisplay;
-				// console.log(this.m_pTimeLabel.innerHTML);
+				let currentPlayerTime = nSecsLastPts;
+				if(this.m_nState_SkipPlayer){ 
+					currentPlayerTime += this.m_time_SkipPlayer
+				}
+				this.m_pTimeLabel.innerHTML = this.fnFormatTime(currentPlayerTime) + "/" + this.fnFormatTime(this.m_fDurationSecs);
+				
 			}
 		}
 	}
 };
+//将秒数格式化为HH:MM:SS这种格式
+function formatDuration(seconds) {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    const formattedHours = String(hours).padStart(2, '0');
+    const formattedMinutes = String(minutes).padStart(2, '0');
+    const formattedSeconds = String(secs).padStart(2, '0');
+
+    return `${formattedHours}:${formattedMinutes}:${formattedSeconds}`;
+}
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ======================== Loading Operation =========================
@@ -1444,23 +2032,46 @@ Player.prototype.fnShowLoading = function() {
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 // ======================== Outside Operation =========================
-Player.prototype.fnSetTrack = function(timeTrack, timeLabel) {
+Player.prototype.fnSetTrack = function(timeTrack, timeLabel, progressBarModal) {
 	this.m_pTimeTrack = timeTrack;
 	this.m_pTimeLabel = timeLabel;
-
+	this.m_pProgressBarModal = progressBarModal;
+	
 	if (this.m_pTimeTrack) {
-		var player = this;
-		this.m_pTimeTrack.oninput = function() {
-			// if (!player.seeking) {
-			// 	player.seekTo(player.m_pTimeTrack.value);
-			// }
-		}
-		this.m_pTimeTrack.onchange = function() {
-			// if (!player.seeking) {
-			// 	player.seekTo(player.m_pTimeTrack.value);
-			// }
+		// var player = this;
+		// this.m_pTimeTrack.oninput = function() {
+		// 	// if (!player.seeking) {
+		// 	// 	player.seekTo(player.m_pTimeTrack.value);
+		// 	// }
+		// }
+		// this.m_pTimeTrack.onchange = function() {
+		// 	// if (!player.seeking) {
+		// 	// 	player.seekTo(player.m_pTimeTrack.value);
+		// 	// }
+		// }
+	}
+	
+	//是否隐藏进度条模块（特殊处理，在直播时隐藏、回放时显示）
+	if(this.m_pProgressBarModal){
+		if(this.m_pUrlInfo.isStream){
+			this.m_pProgressBarModal.style.display = 'none';  
+		}else{
+			this.m_pProgressBarModal.style.display = '';  
 		}
 	}
+	
+	let isStream = this.m_pUrlInfo.isStream 
+	
+	//flv 回放统计时长
+	let proto = this.m_pUrlInfo.proto
+	if(kProtoType_HTTP == proto){
+		if(!isStream){
+			let duration = calculateTimeDifference(this.m_pUrlInfo.endDate, this.m_pUrlInfo.startDate);
+			this.m_fDurationSecs = duration / 1000;
+			this.m_pTimeTrack.max = duration / 1000;
+		} 
+	}
+	
 };
 
 // ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1549,3 +2160,116 @@ Player.prototype.fnRegisterVisibilityEvent = function(cb) {
 		});
 	}
 };
+
+Player.prototype.fnDealTimerAuth = function() {
+	let player = this;
+	if (!this.m_pWorker_Dec) {
+		return;
+	}
+
+	if (this.m_bSendProfile) {
+		var szProfile = window.sessionStorage.getItem(ProfileKey_Note[0]);
+		if (szProfile) {
+			var msgReq = {
+				t: kReq_Profile,
+				u: szProfile
+			};
+			this.m_pWorker_Dec.postMessage(msgReq);
+			this.m_bSendProfile = false;
+		} else {
+			this.fnGetProfile();
+		}
+	}
+
+	if (this.m_bSendAuth) {
+		var szAuth = window.sessionStorage.getItem(AuthKey_Note);
+		if (szAuth) {
+			var msgReq = {
+				t: kReq_Auth,
+				a: szAuth
+			};
+			this.m_pWorker_Dec.postMessage(msgReq);
+			this.m_bSendAuth = false
+		    window.setTimeout(function(){
+				window.sessionStorage.removeItem(AuthKey_Note);
+				player.m_bSendAuth = true;
+				player.fnStartTimerAuth();
+			},g_nMilliSecsOfBuff_Set);
+		} else {
+			if (3 < this.nReqAuthCount) {
+				this.AuthErrorByStop();
+				console.error("Not authorized, please contact us");
+			}
+		}
+		this.fnRequestAuth();
+	}
+
+	if (!this.m_bSendProfile && !this.m_bSendAuth) {
+		this.fnStopTimerAuth();
+	}
+};
+
+Player.prototype.fnStartTimerAuth = function() {
+	if (this.m_pTimer_Auth) {
+		return;
+	}
+
+	var player = this;
+	this.m_pTimer_Auth = setInterval(function() {
+		player.fnDealTimerAuth();
+	}, AuthRate_time);
+};
+
+Player.prototype.fnStopTimerAuth = function() {
+	if (this.m_pTimer_Auth) {
+		clearInterval(this.m_pTimer_Auth);
+		this.m_pTimer_Auth = null;
+	}
+};
+
+
+//像素化
+Player.prototype.pixelation = function (ctx, x, y, width, height, pixelSize) {
+	const imageData = ctx.getImageData(x, y, width, height);
+	const data = imageData.data;
+	for (let i = 0; i < height; i += pixelSize) {
+		for (let j = 0; j < width; j += pixelSize) {
+			const red = data[((i * width + j) * 4)];
+			const green = data[((i * width + j) * 4) + 1];
+			const blue = data[((i * width + j) * 4) + 2];
+			ctx.fillStyle = `rgb(${red},${green},${blue})`;
+			ctx.fillRect(x + j, y + i, pixelSize, pixelSize);
+		}
+	}
+}
+
+//模糊化
+Player.prototype.blurring = function (ctx, x, y, width, height, blurRadius) {
+	const imageData = ctx.getImageData(x, y, width, height);
+	const data = imageData.data;
+	const tempData = new Uint8ClampedArray(data);
+
+	for (let i = 0; i < height; i++) {
+		for (let j = 0; j < width; j++) {
+			let red = 0, green = 0, blue = 0, count = 0;
+			for (let dy = -blurRadius; dy <= blurRadius; dy++) {
+				for (let dx = -blurRadius; dx <= blurRadius; dx++) {
+					const ny = i + dy;
+					const nx = j + dx;
+					if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
+						const index = (ny * width + nx) * 4;
+						red += tempData[index];
+						green += tempData[index + 1];
+						blue += tempData[index + 2];
+						count++;
+					}
+				}
+			}
+			const idx = (i * width + j) * 4;
+			data[idx] = red / count;
+			data[idx + 1] = green / count;
+			data[idx + 2] = blue / count;
+		}
+	}
+	ctx.putImageData(imageData, x, y);
+}
