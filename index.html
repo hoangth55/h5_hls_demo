@@ -14,6 +14,7 @@
 		<div class="container" id="videoPlayer">
 			<div id="canvasTop" class="sideBar">
 				<div id="input">
+					<input type="number" value="1" onchange="changeVolume(value)"/>
 					<select id="protocol" onchange="onSelectProto()">
 						<option value="httpFlv">FLV</option>
 						<option value="httpHls">HLS</option>
@@ -89,7 +90,7 @@
 		<script type='text/javascript'>
 			var defaultProtos = {
 				httpFlv: {
-					url: "https://gwm-000-cn-0448.bcloud365.net:9015/live/44b35a3d597ffd1c/Mnx8Y2U3ZTg2YmYxOGZmZTE3YmQ0NDRkZWUxMTcyN2FjZTd8fDQ0YjM1YTNkNTk3ZmZkMWN8fDJlYmY0NGY4NGFjN2QwYzg5MmJmZjQxNG8I0NWVlOTY1NzU1YjlhNjY5NjliYzNkOGNlOGNlNDkxMDk5MDlkY2V8fGZsdnx8MTcyMjMzMTMwNzYwMHx8MTc5OTkwMTU4MDM5M3x8R1dN.9c31eb5dd76c7532c23b55d10c43321b.flv",
+					url: "https://gwm-poc.viettelcamera.vn:9015/live/1ce32155e73d3804/Mnx8OTIxYjhhNjcyMjliZmFlNDNlY2VlODE4OGZlNDI4ODl8fDFjZTMyMTU1ZTczZDM4MDR8fDEwMTFkZjU5NGU5MWU1MzVlYTgwYjUzMz7hlN2EwNzg5MjljZjY5ZTZhZTU2ODU4MWM1MTg4MTY2NDkxYTZhMjF8fGZsdnx8MTcyMzEwODkyNTA3NHx8MTcyNDg2NzE3Mjc0Nnx8R1dN.f0244f5b736cde233cac9f95c2c2ebc2.flv",
 					waitLength: 1,
 					stream: true,
 				},
@@ -257,6 +258,13 @@
 
 			function fullscreen() {
 				self.player.fnFullscreen();
+				//self.player.changeVolume(50);
+			}
+
+			function changeVolume(value){
+				console.log(value);
+				
+				self.player.changeVolume(value);
 			}
 
 			function exitfullscreen() {
