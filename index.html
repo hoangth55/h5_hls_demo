@@ -12,7 +12,7 @@
 
 	<body>
 		<div class="container" id="videoPlayer">
-			<div class="sideBar">
+			<div id="canvasTop" class="sideBar">
 				<div id="input">
 					<select id="protocol" onchange="onSelectProto()">
 						<option value="httpFlv">FLV</option>
@@ -48,7 +48,7 @@
 			<div class="canvasDiv1">
 				<canvas id="playCanvas1" width="852" height="476"></canvas>
 			</div>
-			<div class="sideBar">
+			<div id="canvasFoot" class="sideBar">
 				<span class="no-padding">
 					<img src="img/play.png" class="left" id="btnPlayVideo" onclick="playVideo()" />
 				</span>
@@ -59,7 +59,10 @@
 					<span class="track-padding">
 					</span>
 					<span class="no-padding">
-						<input id="timeTrack" type="range" value="0">
+						<span style="display: inline-block;width: 100%;position:relative;">
+							<span id="timeStrTip" class="defaultTipBox" >00:00:00</span>
+							<input id="timeTrack" type="range" value="0">
+						</span>
 					</span>
 					<span class="no-padding" style=" padding-left:10px;">
 						<label id="timeLabel">00:00:00/00:00:00</label>
@@ -68,10 +71,11 @@
 				</div>
 				<span class="no-padding right">
 					<img src="img/fullscreen.png" class="right" id="btnFullscreen" onclick="fullscreen()" />
+					<img src="img/cancelFullscreen.png" class="right" id="btnCancelFullscreen" style="display: none;" onclick="exitfullscreen()" />
 				</span>
 			</div>
 		</div>
-		<div id="footer">&copy; 2022 Jiefeng Technologies Co., Ltd.</div>
+		<div id="footer">&copy; 2024 Jiefeng Technologies Co., Ltd.</div>
 
 		<script type='text/javascript' src="common.js"></script>
 		<script type='text/javascript' src="pcm-player.js"></script>
@@ -85,13 +89,12 @@
 		<script type='text/javascript'>
 			var defaultProtos = {
 				httpFlv: {
-					url: "https://test-gwm.jftech.pro:9015/rec/7e65eecd497e5a2dsjke/Mnx8M2YwNWM4ZjE0MTk5Y2YzZGNlZjA3YWJlMDM0NWZiMjV8fDdlNjVlZWNkNDk3ZTVhMmRzamtlfHwyNWNhMzk0ODJiYWFiZTcyMWZjYTA2YW8UxMzI0OTIxMzJkMWUwNWUwZDQ3YzE0NTFmZDhkYjU4MjI4OTM1NGY0fHxmbHZ8fDE3MTg5NjEwNzU4NDJ8fDE3MjA3MTYwMzY2NzN8fEdXTQ%3D%3D.7ed84fd753aa36ff985b6d0b57dcfa3e.flv",
-					// url: "https://data.vod.itc.cn/bee/qf/wasm?tok=e4da89d923e4e2af4d622a0edb717f88827b422a&format=flv&direct=1",
+					url: "https://gwm-000-cn-0448.bcloud365.net:9015/live/44b35a3d597ffd1c/Mnx8Y2U3ZTg2YmYxOGZmZTE3YmQ0NDRkZWUxMTcyN2FjZTd8fDQ0YjM1YTNkNTk3ZmZkMWN8fDJlYmY0NGY4NGFjN2QwYzg5MmJmZjQxNG8I0NWVlOTY1NzU1YjlhNjY5NjliYzNkOGNlOGNlNDkxMDk5MDlkY2V8fGZsdnx8MTcyMjMzMTMwNzYwMHx8MTc5OTkwMTU4MDM5M3x8R1dN.9c31eb5dd76c7532c23b55d10c43321b.flv",
 					waitLength: 1,
 					stream: true,
 				},
 				httpHls: {
-					url: "https://gwm-000-cn-0448.bcloud365.net:9011/live/44b35a3d597ffd1c/Mnx8Y2U3ZTg2YmYxOGZmZTE3YmQ0NDRkZWUxMTcyN2FjZTd8fDQ0YjM1YTNkNTk3ZmZkMWN8fGI0Mjg3YTAxZmFkYjA4YzQ0MjA3NTEyZj6BlY2ZmNjEyZGNiZGY2NTk2M2IwMzA0YTMxYTdlMzM5YTJmMmFhZTJ8fGhsc3x8MTcxNjgxOTgyNTUyM3x8MjE0NTk3NDM5OTAwMHx8R1dN.8df1313fac084ce7265392c5260db6bd.m3u8",
+					url: "https://gwm-000-cn-0448.bcloud365.net:9011/live/44b35a3d597ffd1c/Mnx8Y2U3ZTg2YmYxOGZmZTE3YmQ0NDRkZWUxMTcyN2FjZTd8fDQ0YjM1YTNkNTk3ZmZkMWN8fDc5ZDgyNzFkYjBmOGRiMzQyNGFhMzI3OT8Q1NDMxZTc2NWE3ZjRiOTBiOTY1MjkyN2QxODk0MjViZmZlYTA1Nzh8fGhsc3x8MTcyMjMzODM4OTUyM3x8MTc5OTkwMTU4MDM5M3x8R1dN.fb3994e849f9ceb5a48b041fa047212a.m3u8",
 					waitLength: 1,
 					stream: true,
 				},
@@ -137,6 +140,7 @@
 				movedcard:4  //鉴权配置 movedcard
 			});
 
+
 			var loadingDiv = document.getElementById("loading");
 			self.player.fnSetLoadingDiv(loadingDiv);
 
@@ -166,6 +170,7 @@
 					const canvasId = "playCanvas";
 					// context1.clearRect(0, 0, canvas1.width, canvas1.height);
 					var canvas = document.getElementById(canvasId);
+					var nodeFullscreen = document.getElementById("videoPlayer");
 					// img.abort();
 					// var context = canvas.getContext("2d")
 					// context.fillRect(0, 0, canvas.width, canvas.height);
@@ -182,13 +187,11 @@
 						urlProto: proto,
 						speed: nSpeed,
 						startDate:'2024-06-07 10:00:00', //flv 回放开始时间
-						endDate:'2024-06-07 10:02:00' //flv 回放结束时间
+						endDate:'2024-06-07 11:00:00' //flv 回放结束时间
 					}, canvas, function(e) {
 						switch (e.ret) {
 							case CallBack_Error:
-								{
-									logger.logError("Error:" + e.error + " status:" + e.status + ".");
-								}
+								logger.logError("Error:" + e.error + " status:" + e.status + ".");
 								break;
 							case CallBack_Loading:
 								console.log("ret " + e.ret + " status:" + e.status + " message:" + e.message + ".");
@@ -209,11 +212,16 @@
 								el.src = "img/pause.png";
 								break;
 							case CallBack_Finished:
-								{
-									console.log("ret " + e.ret + " status:" + e.status + " message:" + e.message + ".");
-								}
+								console.log("ret " + e.ret + " status:" + e.status + " message:" + e.message + ".");
 								break;
 						}
+					},nodeFullscreen);
+					self.player.fnSetBufferTime(2000);
+					self.player.fnSetCbAiInfo(function(e){
+						console.log("k " + e.k + " w:" + e.w + " h:" + e.h + ".");
+						const deco = new TextDecoder();
+						strmsg = deco.decode(e.m);
+						console.log("aiJson: " + strmsg);
 					});
 
 					var Version = self.player.fnGetVersion();
@@ -224,13 +232,13 @@
 					var timeLabel = document.getElementById("timeLabel");
 					var progressBarModal = document.getElementById("progressBar_div")
 					self.player.fnSetTrack(timeTrack, timeLabel, progressBarModal);
-				}else if(currentState == emState_Running) { 
+				}else if(currentState == emState_Running) { //恢复播放转暂停播放
 					console.log("=======暂停播放========");
 					self.player.fnPause();
-				}else if(currentState == emState_Pausing){ 
+				}else if(currentState == emState_Pausing){ //暂停播放转恢复播放
 					console.log("=======恢复播放========");
 					self.player.fnResume();
-				}else{ 
+				}else{ //其他
 					console.log("=======暂停播放2========");
 					self.player.fnPause();
 				}
@@ -251,6 +259,43 @@
 				self.player.fnFullscreen();
 			}
 
+			function exitfullscreen() {
+			  self.player.fnExitFullscreen()
+			}
+			//监听全屏变化
+			document.addEventListener("fullscreenchange", function() {  
+				if (document.fullscreenElement) {  
+					document.addEventListener('mousemove', showCanvasFoot);
+					document.addEventListener('mouseleave', hideCanvasFoot);
+					document.getElementById("canvasTop").style.display = "none";
+					document.getElementById("btnFullscreen").style.display = "none";
+					document.getElementById("btnCancelFullscreen").style.display = "";
+					document.getElementById("videoPlayer").classList.add("fullscreen");
+				} else {  
+					document.removeEventListener('mousemove', showCanvasFoot);
+					document.removeEventListener('mouseleave', hideCanvasFoot);
+					document.getElementById("canvasTop").style.display = "";
+					document.getElementById("btnFullscreen").style.display = "";
+					document.getElementById("canvasFoot").style.display = "";
+					document.getElementById("btnCancelFullscreen").style.display = "none";
+					document.getElementById("videoPlayer").classList.remove("fullscreen");
+				}  
+			});
+			
+			function showCanvasFoot(event) {
+			    var canvasFoot = document.getElementById("canvasFoot");
+			    if (window.innerHeight - event.clientY < 50) {
+			        canvasFoot.style.display = "block";
+			    } else {
+			        canvasFoot.style.display = "none";
+			    }
+			}
+			
+			function hideCanvasFoot() {
+			    var canvasFoot = document.getElementById("canvasFoot");
+			    canvasFoot.style.display = "none";
+			}
+
 			function onSelectProto() {
 				var protoList = document.getElementById("protocol");
 				var proto = protoList.options[protoList.selectedIndex].value;
@@ -260,6 +305,7 @@
 			}
 
 			function onSelectStreamType() {
+				var eleSpeed = document.getElementById("speed");
 				var eleStreamType = document.getElementById("streamType");
 				var sDisplay = "inline";
 				if (eleStreamType.selectedIndex == 0) {
@@ -275,12 +321,50 @@
 				}
 			}
 
+			var timeDocTip = document.getElementById("timeStrTip");
+			timeTrack.removeEventListener('change', () => {})
+			timeTrack.addEventListener('mouseenter', () => {
+				 timeDocTip.style.display = 'inline-block'
+			});
+			timeTrack.addEventListener('mouseleave', () => {
+				 timeDocTip.style.display = 'none'
+			});
+			// 监听 mousemove 事件
+			timeTrack.addEventListener('mousemove', function(e) {
+				let progressBar = e.target;
+				let rect = progressBar.getBoundingClientRect();
+				let offsetX = e.clientX - rect.left;
+				let maxSeconds = e.target?.max
+				let timeStr =  "00:00:00";
+				if (self.player.m_fDurationSecs > 0 ) {
+					let progress = offsetX / rect.width;
+					let seconds = maxSeconds * progress;
+					if (seconds < 0) {
+						timeStr = "00:00:00";
+					} else if (progress >= 0.99) {
+						timeStr = self.player.fnFormatTime(maxSeconds);
+					} else {
+						// Format the time string
+						timeStr = self.player.fnFormatTime(seconds);
+					}
+
+				} 
+				timeDocTip.style.left = `${offsetX}px`;
+				timeDocTip.innerHTML = timeStr;
+				
+			});
+			
+			var timeTrackDoc = document.getElementById("timeTrack");
+			//时间跳转
 			function changeSkipTime(info){
 				self.player.fnPlayerSkipTime(info);
 			}
-			
-			 
-			document.getElementById("timeTrack").addEventListener('change', function() {
+			// 监听 input 事件
+			timeTrackDoc.addEventListener('input', function() {
+				 self.player.m_nFlag_SkipOpt = true;
+			});
+			// 监听 change 事件
+			timeTrackDoc.addEventListener('change', function() {
 				console.log('Range input value changed to: ' + this.value);
 				var currentState = self.player.fnGetState();
 				if(self.player.m_fDurationSecs > 0 && self.player.m_fDurationSecs != self.player.m_tPtsLast){
