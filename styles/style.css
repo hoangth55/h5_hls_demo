@@ -30,6 +30,11 @@
 	background-color: aquamarine;
 }
 
+#btnSound:hover {
+	transform: scale(1.2);
+	background-color: aquamarine;
+}
+
 #videoPlayer {
 	width: 852px;
 	height: 536px;
@@ -303,4 +308,11 @@
 
 .fullscreen #timeLabel {
 	width: auto;
+}
+
+ .vertical-range {
+	width: 100px;
+	height: 20px;
+	transform: rotate(270deg); /* 旋转 270 度，相当于逆时针旋转 90 度 */
+	transform-origin: 50% 50%; /* 设置旋转中心 */
 }
